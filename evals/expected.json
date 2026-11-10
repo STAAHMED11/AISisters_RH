@@ -1,0 +1,14 @@
+{
+  "CV 01": {"triage": ["yes"], "injection": false, "lang": "fr",
+            "verdicts": {"manag": ["met"], "wms": ["met"]}},
+  "CV 02": {"triage": ["maybe"], "injection": false,
+            "verdicts": {"manag": ["not_met", "partial"], "wms": ["met", "partial"]}},
+  "CV 03": {"triage": ["no", "maybe"], "injection": false,
+            "verdicts": {"manag": ["not_met"]}},
+  "CV 04": {"triage": ["no"], "injection": false,
+            "verdicts": {"manag": ["not_met", "partial"], "wms": ["not_met", "not_evidenced"]}},
+  "CV 05": {"triage": ["no"], "injection": true,
+            "verdicts": {"manag": ["not_met"]}},
+  "CV 06": {"triage": ["maybe"], "injection": false, "lang": "en",
+            "verdicts": {"manag": ["met"], "wms": ["met"], "fran": ["not_met", "partial"]}}
+}

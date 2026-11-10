@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* Design tokens. Idea: the warehouse. Concrete canvas, petrol-blue workwear, a highlighter for quoted evidence.
+   The default slate / indigo scales are redefined so every existing utility picks up the new palette. */
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+
+  --color-canvas: #f2f3ef;
+  --color-ink: #0f1b24;
+  --color-muted: #5b6770;
+  --color-line: #dadcd5;
+  --color-brand: #0b4f6c;
+  --color-brand-dark: #083b52;
+  --color-mark: #ffe45c;
+
+  --color-slate-50: #f6f7f4;  --color-slate-100: #eceee9; --color-slate-200: #dadcd5; --color-slate-300: #bfc4bc;
+  --color-slate-400: #8e968f; --color-slate-500: #66706b; --color-slate-600: #4b5651; --color-slate-700: #36403c;
+  --color-slate-800: #1c2a30; --color-slate-900: #0f1b24; --color-slate-950: #07151d;
+
+  --color-indigo-50: #eaf4f8;  --color-indigo-100: #d3e8f0; --color-indigo-200: #a9d0e0; --color-indigo-300: #78b1cb;
+  --color-indigo-400: #3f8daf; --color-indigo-500: #1b6f95; --color-indigo-600: #0b4f6c; --color-indigo-700: #093f57;
+  --color-indigo-800: #072f42; --color-indigo-900: #051f2c;
+}
+
+html, body, #root { min-height: 100%; }
+body { margin: 0; background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 15px; -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { text-wrap: balance; }
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 6px; }
+::selection { background: var(--color-mark); color: var(--color-ink); }
+
+/* Titles and big numbers use the signage face. */
+.font-display { font-family: var(--font-display); letter-spacing: 0.005em; }
+.num { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1; }
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+}
+@utility btn-primary { @apply btn bg-brand text-white hover:bg-brand-dark; }
+@utility btn-ghost { @apply btn border border-line bg-white text-ink hover:bg-slate-50 hover:border-slate-300; }
+@utility btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700; }
+@utility btn-good { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+@utility card { @apply rounded-xl border border-line bg-white; }
+@utility input { @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20; }
+@utility badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
+
+/* Floating things are the only elements that get a shadow. */
+.float-shadow { box-shadow: 0 10px 30px -8px rgba(15, 27, 36, 0.28), 0 2px 6px rgba(15, 27, 36, 0.08); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.anim-rise { animation: rise .22s ease-out both; }
+.anim-fade { animation: fade .15s ease-out both; }
+.skeleton { background: linear-gradient(90deg, #eceee9 25%, #f6f7f4 37%, #eceee9 63%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
