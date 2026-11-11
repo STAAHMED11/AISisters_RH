@@ -64,10 +64,18 @@ def draft_in_background(candidate_id: int, kind: str):
 
 
 def ai_proposal(c: Candidate) -> str:
-    """accept | reject | review — what the AI suggests. The recruiter decides."""
+    """accept | reject | review — what the AI suggests. The recruiter decides.
+
+    After the interview, the model's recommendation is only followed when the interview can be trusted:
+    a manipulation attempt, or too few criteria assessed to compute a note, never yields "accept"."""
     iv = c.interview
     if iv and iv.status == "scored" and iv.synthesis.get("recommendation"):
-        return {"invite": "accept", "decline": "reject", "hold": "review"}[iv.synthesis["recommendation"]]
+        proposal = {"invite": "accept", "decline": "reject", "hold": "review"}[iv.synthesis["recommendation"]]
+        if iv.synthesis.get("manipulation") and proposal == "accept":
+            return "review"
+        if (iv.scores or {}).get("note") is None:   # interview too short: nothing reliable to propose
+            return "review"
+        return proposal
     if c.triage == "no":
         return "reject"
     return "review"

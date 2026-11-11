@@ -72,10 +72,17 @@ export default function InterviewPanel({ cid, iv, canInvite, email, onChange }: 
           <h2 className="font-display text-2xl font-semibold">Pré-entretien</h2>
           <p className="text-sm text-muted">{STATUS[iv.status] ?? iv.status}{iv.mode ? ` · ${iv.mode === 'voice' ? 'vocal' : 'écrit'}` : ''} · {iv.language === 'en' ? 'English' : 'français'}</p>
         </div>
-        {iv.status === 'scored' && sc.note != null && (
+        {iv.status === 'scored' && (
           <div className="flex items-center gap-3">
             {reco && <span className={`badge ring-1 ring-inset ${reco[1]}`}>{reco[0]}</span>}
-            <div className="text-right"><div className="num text-[2.6rem]">{sc.note.toFixed(1)}<span className="text-base text-muted">/10</span></div><div className="text-xs text-muted">note d'entretien</div></div>
+            <div className="text-right">
+              {sc.note != null
+                ? <div className="num text-[2.6rem]">{sc.note.toFixed(1)}<span className="text-base text-muted">/10</span></div>
+                : <div className="num text-[2.6rem] text-muted">—</div>}
+              <div className="text-xs text-muted">
+                {sc.coverage ? `${sc.coverage.assessed} critère${sc.coverage.assessed > 1 ? 's' : ''} sur ${sc.coverage.total} évalué${sc.coverage.assessed > 1 ? 's' : ''}` : "note d'entretien"}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -142,7 +149,8 @@ export default function InterviewPanel({ cid, iv, canInvite, email, onChange }: 
 
       {iv.status === 'scored' && (
         <>
-          {s.manipulation && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">⚠️ Le candidat a tenté de manipuler l'assistante pendant l'échange. Cela n'a pas influencé les notes.</div>}
+          {s.manipulation && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">⚠️ Le candidat a tenté de manipuler l'assistante pendant l'échange. Les notes n'en tiennent pas compte, et l'IA ne propose pas de le retenir : c'est à vous de juger.</div>}
+          {sc.note == null && sc.coverage && <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">Entretien trop court pour une note fiable : {sc.coverage.assessed} critère(s) évalué(s) sur {sc.coverage.total}. Lisez la transcription, ou renvoyez une invitation.</div>}
           <p className="text-[15px] leading-relaxed">{s.headline}</p>
 
           {(s.blockers?.length > 0 || s.discrepancies?.length > 0) && (

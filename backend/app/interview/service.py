@@ -205,6 +205,14 @@ def candidate_text(transcript: list[dict]) -> str:
     return "\n".join(t["text"] for t in transcript if t["role"] != "agent")
 
 
+MIN_COVERAGE = 0.5  # below half of the criteria assessed, the interview is too short to deserve a note
+
+
+def coverage(grades: dict[int, int], criteria) -> tuple[int, int]:
+    """(criteria actually assessed, total criteria). Not covered / unverified (-1 or absent) do not count."""
+    return sum(1 for k in criteria if grades.get(k.id, -1) >= 0), len(criteria)
+
+
 def interview_note(grades: dict[int, int], criteria) -> float:
     """0..10 from per-criterion grades (0-3), weighted must=3 / nice=1. Criteria not covered (-1/absent) are excluded."""
     assessed = [k for k in criteria if grades.get(k.id, -1) >= 0]
@@ -254,8 +262,11 @@ def score_interview(candidate_id: int):
                 res.append({"text": e.text, "quote": e.quote if ok else "", "verified": ok})
             return res
 
-        note = interview_note(grades, c.job.criteria)
-        iv.scores = {"grades": out_grades, "note": round(note, 2)}
+        assessed, total = coverage(grades, c.job.criteria)
+        # One good answer must not become 10/10: below the minimum coverage there is no note, only the grades.
+        enough = bool(total) and assessed / total >= MIN_COVERAGE
+        note = round(interview_note(grades, c.job.criteria), 2) if enough else None
+        iv.scores = {"grades": out_grades, "note": note, "coverage": {"assessed": assessed, "total": total}}
         iv.synthesis = {
             "strengths": ev(syn.strengths), "doubts": ev(syn.doubts), "probes": syn.probes,
             "logistics": [l.model_dump() for l in syn.logistics], "blockers": syn.blockers,
@@ -263,12 +274,12 @@ def score_interview(candidate_id: int):
             "headline": syn.headline, "manipulation": syn.manipulation,
         }
         iv.status = "scored"
-        c.interview_note = round(note, 2)
+        c.interview_note = note
         cv = c.cv_score if c.cv_score is not None else 0.0
-        c.global_score = round(CV_WEIGHT * cv + (1 - CV_WEIGHT) * note / 10, 3)
+        c.global_score = round(CV_WEIGHT * cv + (1 - CV_WEIGHT) * note / 10, 3) if note is not None else None
         db.commit()
-        log_event(db, "IA", "interview_scored", "candidate", c.id, note=round(note, 1),
-                  recommendation=syn.recommendation, prompt_version=PROMPT_VERSION)
+        log_event(db, "IA", "interview_scored", "candidate", c.id, note=note, assessed=assessed, total=total,
+                  recommendation=syn.recommendation, manipulation=syn.manipulation, prompt_version=PROMPT_VERSION)
     except (LLMError, Exception) as e:  # noqa: BLE001
         log.exception("scoring failed for %s", candidate_id)
         c = db.get(Candidate, candidate_id)
