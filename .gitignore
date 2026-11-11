@@ -7,4 +7,3 @@ node_modules/
 frontend/dist/
 .pytest_cache/
 test-cvs/
-docs/voice-samples/

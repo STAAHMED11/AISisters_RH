@@ -37,7 +37,6 @@ class Profile(BaseModel):
     email: str
     phone: str
     city: str
-    age: int
     current_title: str
     years_experience: float
     education_level: str

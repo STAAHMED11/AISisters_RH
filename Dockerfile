@@ -16,7 +16,6 @@ COPY --from=web /usr/local/bin/node /usr/local/bin/node
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend
-COPY evals evals
 COPY start.sh start.sh
 COPY --from=web /f/.next/standalone web
 ENV DATA_DIR=/data PYTHONUNBUFFERED=1 NEXT_TELEMETRY_DISABLED=1

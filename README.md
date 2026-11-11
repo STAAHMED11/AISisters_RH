@@ -134,7 +134,7 @@ frontend/src/
   views/             screens: Jobs, JobDetail, Candidates, CandidateDetail, Outbox, CostJob, candidate/*
   components/ · lib/ shared UI, dialogs and toasts, i18n, query-string helper
 evals/               eval on the six sample CVs, generated "surprise" CVs, simulated candidates
-scripts/             voice agent setup, demo seed, voice comparison, text smoke test
+scripts/             check.sh (all checks), smoke_live.py (deployed app), setup_agent.py (voice agent), seed_demo.py (demo data)
 ```
 
 ## Configuration

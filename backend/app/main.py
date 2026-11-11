@@ -21,8 +21,27 @@ except Exception:  # noqa: BLE001
 log = logging.getLogger("app")
 
 
+def _purge_unused_personal_data():
+    """Data minimisation: the age is no longer extracted (never used); remove it from profiles stored before."""
+    from .db import SessionLocal
+    from .models import Candidate
+    with SessionLocal() as s:
+        changed = 0
+        for c in s.query(Candidate).all():
+            if c.profile and "age" in c.profile:
+                c.profile = {k: v for k, v in c.profile.items() if k != "age"}
+                changed += 1
+        if changed:
+            s.commit()
+            log.info("removed the stored age from %s profile(s)", changed)
+
+
 def _startup():
     init_db()
+    try:
+        _purge_unused_personal_data()
+    except Exception:  # noqa: BLE001
+        log.exception("personal data purge at startup failed")
     try:  # thresholds may have changed since the candidates were screened (no LLM call involved)
         from .db import SessionLocal
         from .screening.retriage import retriage_all

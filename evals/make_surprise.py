@@ -12,7 +12,7 @@ OUT = Path(__file__).resolve().parent / "cvs"
 OUT.mkdir(exist_ok=True)
 pdfmetrics.registerFont(TTFont("DJ", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
 pdfmetrics.registerFont(TTFont("DJB", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
-W, H = A4
+_, H = A4
 
 
 def lines(c, x, y, items, size=9.5, lead=13, color=None, font="DJ"):

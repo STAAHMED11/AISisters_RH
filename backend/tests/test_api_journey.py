@@ -22,7 +22,7 @@ def fake_structured(tier, system, user, schema, **kw):
             S.CriterionIn(label="WMS", description="SAP EWM ou équivalent", kind="must", source="cv"),
             S.CriterionIn(label="Disponibilité", description="date de prise de poste", kind="nice", source="interview")])
     if schema is S.Profile:
-        return S.Profile(is_cv=True, name="Karim Benali", email="karim@mail.fr", phone="", city="Lyon", age=38,
+        return S.Profile(is_cv=True, name="Karim Benali", email="karim@mail.fr", phone="", city="Lyon",
                          current_title="Responsable", years_experience=12, education_level="Bac+3", education=[],
                          languages=[], skills=[], certifications=[], cv_language="fr", headline="Responsable d'entrepôt")
     if schema is S.InjectionScan:
