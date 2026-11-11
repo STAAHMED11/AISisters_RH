@@ -17,7 +17,9 @@ def _candidate(expires_in_days: float = 7, status: str = "pending") -> tuple[int
     c = Candidate(job_id=job.id, filename="a.pdf", status="screened", triage="yes", token="tok_" + secrets.token_hex(16),
                   profile={"name": "Karim Benali", "email": "karim@example.fr"})
     db.add(c); db.flush()
-    db.add(Interview(candidate_id=c.id, plan={"questions": []}, language="fr", status=status,
+    # A ready plan: opening the link must never trigger an AI call in tests (no network, no cost, works in CI).
+    plan = {"questions": [{"criterion_id": 0, "kind": "closing", "question": "Une question ?", "listen_for": "x"}]}
+    db.add(Interview(candidate_id=c.id, plan=plan, language="fr", status=status,
                      expires_at=now() + timedelta(days=expires_in_days)))
     db.commit()
     out = (c.id, c.token)
