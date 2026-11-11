@@ -1,4 +1,4 @@
-"""Replies: a personalized message is drafted for every candidate, approved by the recruiter before sending (email mocked)."""
+"""Replies: a personalised e-mail is drafted for every candidate and sent only once the recruiter approves it."""
 import logging
 
 from sqlalchemy.orm import Session
