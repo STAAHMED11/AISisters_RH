@@ -229,7 +229,7 @@ Idea taken from the warehouse itself — **sorting lanes, dock signage, shipping
 | What | Command |
 |---|---|
 | Unit/API tests (36, hermetic: `conftest.py` blanks every API key and the SMTP settings, so a test can never call a paid API or send a real e-mail) | `.venv/bin/python -m pytest backend/tests` |
-| **CI/CD** (GitHub Actions, `.github/workflows/ci.yml`) | On every push / PR: pytest · Next.js lint + typecheck + build · Docker build. On `main`, once all are green: `modal deploy` + health check of the live URL. Needs the repo secrets `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` (without them the deploy job is skipped). |
+| Same checks as a CI pipeline, run locally before each deploy | `.venv/bin/python -m pytest backend/tests -q && (cd frontend && npm run lint && npm run build) && docker build -t orvane-rh .` |
 | Eval on the 6 given CVs vs expected outcomes (real LLM) | `.venv/bin/python -m evals.run_eval` |
 | 8 generated "surprise" CVs (sidebar PDF, hidden injection, scanned PNG, English, off-topic, recipe, empty…) | `python -m evals.make_surprise && python -m evals.run_eval --surprise` |
 | Simulated candidate (honest / jailbreak / off-topic / terse) against a running server | `python -m evals.sim_interview --base URL --password … --candidate ID [--persona jailbreak]` |
