@@ -4,9 +4,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.colors import HexColor, white
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 
 OUT = Path(__file__).resolve().parent / "cvs"
 OUT.mkdir(exist_ok=True)

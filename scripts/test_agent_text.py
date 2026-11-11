@@ -11,7 +11,11 @@ import websockets
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app.db import SessionLocal  # noqa: E402
-from backend.app.interview.elevenlabs import fetch_conversation, signed_url, to_transcript  # noqa: E402
+from backend.app.interview.elevenlabs import (  # noqa: E402
+    fetch_conversation,
+    signed_url,
+    to_transcript,
+)
 from backend.app.interview.service import agent_variables  # noqa: E402
 from backend.app.models import Candidate  # noqa: E402
 
