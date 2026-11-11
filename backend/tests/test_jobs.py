@@ -45,6 +45,10 @@ def test_job_lifecycle(client, monkeypatch):
     assert "criteria_edited" in actions and "job_created" in actions
     assert client.delete(f"/api/jobs/{jid}").status_code == 200
     assert client.get(f"/api/jobs/{jid}").status_code == 404
+    from backend.app.db import SessionLocal
+    from backend.app.models import Criterion
+    with SessionLocal() as s:
+        assert s.query(Criterion).filter_by(job_id=jid).count() == 0   # cascaded by the database
 
 
 def test_editing_criteria_keeps_evidence_and_flags_stale(client, monkeypatch):

@@ -1,7 +1,7 @@
 """Flask application factory. The API lives under /api; the UI is the Next.js app (frontend/), which proxies /api here."""
 import logging
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from werkzeug.exceptions import HTTPException as WerkzeugHTTPException
 
 from . import auth
@@ -34,7 +34,7 @@ def _startup():
 
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
-    app.config.update(TESTING=testing, BACKGROUND_SYNC=testing, MAX_CONTENT_LENGTH=60 * 1024 * 1024, JSON_SORT_KEYS=False)
+    app.config.update(TESTING=testing, BACKGROUND_SYNC=testing, MAX_CONTENT_LENGTH=60 * 1024 * 1024)
     app.json.sort_keys = False
     app.json.ensure_ascii = False
 
@@ -45,16 +45,20 @@ def create_app(testing: bool = False) -> Flask:
     app.teardown_request(run_background)
     app.teardown_appcontext(close_db)
 
+    # A request that ends in an error must not leave work behind: background tasks it queued are dropped.
     @app.errorhandler(HTTPException)
     def _api_error(e: HTTPException):
+        g.pop("bg_tasks", None)
         return jsonify({"detail": e.detail}), e.status_code
 
     @app.errorhandler(WerkzeugHTTPException)
     def _http_error(e: WerkzeugHTTPException):
+        g.pop("bg_tasks", None)
         return jsonify({"detail": e.description}), e.code
 
     @app.errorhandler(Exception)
     def _unhandled(e: Exception):
+        g.pop("bg_tasks", None)
         log.exception("Unhandled error on %s %s", request.method, request.path)
         return jsonify({"detail": f"Erreur serveur ({type(e).__name__}): {str(e)[:200]}"}), 500
 

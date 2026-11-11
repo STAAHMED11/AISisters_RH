@@ -1,7 +1,7 @@
 import re
 
 from flask import Blueprint
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
@@ -247,7 +247,10 @@ def re_extract(job_id: int, user: str):
 def delete_job(job_id: int, user: str):
     db = get_session()
     job = get_job_or_404(db, job_id)
-    db.delete(job)
+    title = job.title
+    # One statement; the database cascades to criteria, candidates and everything attached to them
+    # (foreign keys ON DELETE CASCADE, enforced by PRAGMA foreign_keys in db.py).
+    db.execute(delete(Job).where(Job.id == job_id))
     db.commit()
-    log_event(db, user, "job_deleted", "job", job_id)
+    log_event(db, user, "job_deleted", "job", job_id, title=title)
     return {"ok": True}

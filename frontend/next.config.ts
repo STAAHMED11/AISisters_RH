@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     return [{ source: '/api/:path*', destination: `${API_URL}/api/:path*` }]
   },
   experimental: {
-    proxyTimeout: 180_000,   // creating an offer / preparing an interview waits for the LLM (default 30 s is too short)
+    proxyTimeout: 300_000,   // same as gunicorn's --timeout: creating an offer / preparing an interview waits for the LLM
   },
 }
 
