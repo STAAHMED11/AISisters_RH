@@ -111,3 +111,5 @@ This is a pilot, not a finished product. Before giving it to the six recruiters 
 - **Anonymization.** French job titles still show gender ("Cheffe", "Adjointe").
 - **Personal data.** No retention period or deletion on request yet, and the hosting is in the US.
 - **Reminders.** A candidate who does not take the interview gets no reminder.
+- **Automatic checks.** I run `scripts/check.sh` by hand before each deploy. It should run on every commit
+  (GitHub Actions), and a failed check should block the deploy.
