@@ -118,6 +118,8 @@ class MsgIn(BaseModel):
 def message(token: str):
     db, body = get_session(), parse(MsgIn)
     c, iv = _load(db, token)
+    if not iv.consent_at:  # nothing is recorded before the candidate has agreed
+        raise HTTPException(400, "Consentement requis.")
     if iv.status in ("ended", "scored"):
         raise HTTPException(409, "Cet entretien est déjà terminé.")
     _open(iv)
@@ -141,6 +143,8 @@ def message(token: str):
 def finish(token: str):
     db = get_session()
     c, iv = _load(db, token)
+    if not iv.consent_at:
+        raise HTTPException(400, "Consentement requis.")
     if iv.status not in ("ended", "scored"):
         iv.status = "ended"
         db.commit()

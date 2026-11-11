@@ -155,19 +155,35 @@ scripts/             voice agent setup, demo seed, voice comparison, text smoke 
 
 ## Tests and evaluations
 
+**All checks in one command** (offline and free: no LLM call, no e-mail):
 ```bash
-.venv/bin/python -m pytest backend/tests -q                 # 41 tests, no network
-.venv/bin/python -m evals.run_eval                          # the six sample CVs vs expected outcomes (real LLM)
+pip install -r requirements-dev.txt
+scripts/check.sh              # ruff + pytest + oxlint + Next.js type check and build
+scripts/check.sh --docker     # … + Docker image build
+scripts/check.sh --live       # … + read-only checks of the deployed app (scripts/smoke_live.py [URL])
+```
+
+**pytest (57 tests, hermetic).** `conftest.py` blanks every API key and SMTP setting and blocks any network access,
+so a test can never call a paid API or send a real e-mail.
+
+| File | Covers |
+|---|---|
+| `test_cv_pipeline.py` | triage rules and threshold, quote verification, anonymization (identity removed, dates/durations/volumes kept, accents), hidden text, injection net (attacks vs honest phrases), Canva-style PDFs, interview note (unverified quote, coverage, manipulation) |
+| `test_api_journey.py` | the whole journey through the HTTP API with the LLM stubbed: offer → CVs → screening → invitation → consent → interview → note → decision → reply → costs → deletion, plus error paths |
+| `test_contract.py` | every API call written in the frontend hits an existing Flask route |
+| `test_sample_cvs.py` | the six brief CVs and eight trap CVs: no name or contact leak after anonymization, the injection net flags exactly the two trap CVs, every file parses |
+| `test_invite_email.py` | invitation e-mail (link + deadline), SMTP vs simulated, expired links, race between background preparation and a recruiter click |
+| `test_decisions.py`, `test_jobs.py`, `test_costs.py`, `test_smoke.py` | override comment, funnel and to-do list, criteria editing, costs, auth, background tasks dropped on errors |
+
+**Evals with the real models** (cost a few cents):
+```bash
+.venv/bin/python -m evals.run_eval                          # the six sample CVs vs expected outcomes
 .venv/bin/python -m evals.make_surprise && .venv/bin/python -m evals.run_eval --surprise   # 8 trap CVs
 .venv/bin/python -m evals.sim_interview --base URL --password … --candidate ID --persona jailbreak
 ```
-- **Unit/API tests** are hermetic: `conftest.py` blanks every API key and SMTP setting, so a test can never call a
-  paid API or send a real e-mail. They cover triage, quote verification, anonymization, injection rules, decisions,
-  costs, e-mails, and the race between the background interview preparation and a recruiter's click.
-- **Evals** check triage, injection detection, language and zero unverified quotes. The trap CVs include a two-column
-  PDF with a dark sidebar, a 1-pt hidden injection, a scanned PNG in English, an off-topic profile, a recipe and an
-  empty file. Simulated candidates: honest, jailbreak, off-topic, terse.
-- Before each deploy: `pytest`, then `cd frontend && npm run lint && npm run build`, then `docker build .`
+They check triage, injection detection, language and zero unverified quotes. Trap CVs: two-column PDF with a dark
+sidebar, 1-pt hidden injection, scanned PNG in English, off-topic profile, recipe, empty file, equivalent tools,
+adjacent profile. Simulated candidates: honest, jailbreak, off-topic, terse.
 
 ## Deployment
 

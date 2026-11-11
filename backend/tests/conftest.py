@@ -22,3 +22,17 @@ def client():
     with app.test_client() as c:
         c.post("/api/login", json={"password": "pw", "name": "Sylvie"})
         yield c
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Every test is offline: any attempt to reach a remote host (LLM, ElevenLabs, SMTP…) fails the test."""
+    import socket
+    real_connect = socket.socket.connect
+
+    def guarded(self, address, *a, **k):
+        host = address[0] if isinstance(address, tuple) else address
+        if host in ("127.0.0.1", "localhost", "::1") or isinstance(host, (bytes,)) or str(host).startswith("/"):
+            return real_connect(self, address, *a, **k)
+        raise RuntimeError(f"Network access in a test: {address!r}")
+    monkeypatch.setattr(socket.socket, "connect", guarded)
