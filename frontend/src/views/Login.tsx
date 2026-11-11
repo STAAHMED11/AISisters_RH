@@ -23,11 +23,11 @@ export default function Login({ onDone }: { onDone: () => void }) {
         </svg>
         <div className="font-display text-2xl font-semibold tracking-wide">Orvane <span className="text-base font-medium text-white/60">Recrutement</span></div>
         <div className="relative max-w-lg">
-          <h1 className="font-display text-6xl font-semibold leading-[0.95]">Lisez les dix bons profils, pas les 1&nbsp;500&nbsp;CV.</h1>
+          <h1 className="font-display text-6xl font-semibold leading-[0.95]">Le tri des candidatures, preuves à l'appui.</h1>
           <ul className="mt-8 space-y-2 text-[17px] text-white/80">
-            <li>Chaque verdict cite le CV, et le code vérifie la citation.</li>
-            <li>L'IA propose, votre équipe décide.</li>
-            <li>Chaque candidat reçoit une réponse.</li>
+            <li>Chaque CV est comparé aux critères de l'offre, citation du CV à l'appui.</li>
+            <li>Les profils retenus passent un pré-entretien, à l'oral ou à l'écrit.</li>
+            <li>Vous lisez la synthèse, vous décidez, la réponse part au candidat.</li>
           </ul>
         </div>
         <div className="relative text-sm text-white/50">Groupe Orvane · outil interne</div>
