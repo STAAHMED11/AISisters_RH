@@ -121,12 +121,3 @@ def summarize(db, job_id: int | None = None) -> dict:
         "per_cv": round(cost["cv"] / len(cv_cands), 6) if cv_cands else 0.0,
         "per_interview": round(iv_cost / len(iv_cands), 6) if iv_cands else 0.0,
     }
-
-
-def candidate_costs(db, candidate_id: int) -> dict:
-    out = _empty()
-    for purpose, c in db.execute(select(UsageEvent.purpose, func.sum(UsageEvent.cost_usd))
-                                 .where(UsageEvent.candidate_id == candidate_id).group_by(UsageEvent.purpose)).all():
-        out[group_of(purpose)] += c or 0
-        out["total"] += c or 0
-    return {k: round(v, 6) for k, v in out.items()}

@@ -53,7 +53,8 @@ def test_job_cost_aggregation_per_cv_and_per_interview(client, monkeypatch):
     assert d["voice_minutes"] == 1.0
     assert d["candidates"][0]["id"] == a and d["forecast"]["yes_rate"] == 0.5 and d["forecast"]["avg_reply"] == 0.004
     assert client.get("/api/costs").status_code == 404   # the all-offers cost page was removed: costs are read per offer
-    assert client.get(f"/api/candidates/{a}").get_json()["cost"]["total"] == 0.11  # 0.01+0.02+0.03+0.05
+    assert d["candidates"][0]["cost"]["total"] == 0.11  # per-candidate split lives on the offer cost page: 0.01+0.02+0.03+0.05
+    assert "cost" not in client.get(f"/api/candidates/{a}").get_json()   # not shown on the candidate page
     assert client.get(f"/api/jobs/{jid}").get_json()["cost_total"] == 0.15
 
 

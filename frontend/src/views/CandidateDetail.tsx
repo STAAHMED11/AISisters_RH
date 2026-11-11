@@ -63,7 +63,6 @@ export default function CandidateDetail() {
     document.getElementById(`q-${cid}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
   const p = c.profile ?? {}
-  const money = (v: number) => `$${v < 0.01 ? v.toFixed(4) : v.toFixed(3)}`
   const TABS: [string, string][] = [['synthese', 'Synthèse'], ['criteres', 'Critères et CV'], ['historique', `Historique (${c.history?.length ?? 0})`]]
 
   return (
@@ -87,11 +86,6 @@ export default function CandidateDetail() {
           <div className="flex items-center gap-6">
             <div><div className="mb-1 text-xs text-muted">Score CV</div><ScoreBar value={c.cv_score} /></div>
             {c.interview_note != null && <div><div className="mb-1 text-xs text-muted">Entretien</div><div className="num text-[22px]">{c.interview_note.toFixed(1)}<span className="text-sm text-muted">/10</span></div></div>}
-            {c.cost && c.cost.total > 0 && (
-              <Link href={`/costs/${c.job.id}`} title="Coût IA mesuré pour ce candidat (analyse du CV, pré-entretien, voix, courriers)" className="hidden sm:block">
-                <div className="mb-1 text-xs text-muted">Coût IA</div><div className="num text-[22px]">{money(c.cost.total)}</div>
-              </Link>
-            )}
             <PrequalBadge prequal={c.prequal} status={c.status} />
           </div>
         </div>

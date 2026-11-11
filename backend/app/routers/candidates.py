@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from ..audit import log_event
 from ..comms import ai_proposal, mark_sent
 from ..config import settings
-from ..costs import candidate_costs
 from ..interview.service import (
     create_interview,
     ensure_invite_draft,
@@ -232,7 +231,6 @@ def get_candidate(cid: int, user: str):
         "injection_evidence": c.injection_evidence,
         "evaluations": evals,
         "interview": interview_dict(c),
-        "cost": candidate_costs(db, c.id),
         "history": history(db, c.id),
         "ai_proposal": ai_proposal(c),
         "decisions": [{"actor": d.actor, "decision": d.decision, "ai_proposed": d.ai_proposed, "comment": d.comment,
