@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 from .audit import log_event
 from .config import settings
 from .db import SessionLocal
-from .llm import llm
 from .emailtpl import build_html
+from .llm import llm
 from .mailer import MailError, send_email
 from .models import Candidate, Message, now
-from .util import format_date
 from .prompts import DRAFT_SYSTEM, DRAFT_USER
 from .schemas import Draft
+from .util import format_date
 
 log = logging.getLogger("comms")
 

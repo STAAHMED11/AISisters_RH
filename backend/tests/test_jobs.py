@@ -1,6 +1,6 @@
 from backend.app import llm as llm_mod
-from backend.app.schemas import CriteriaExtraction, CriterionIn
 from backend.app.routers.jobs import _clean
+from backend.app.schemas import CriteriaExtraction, CriterionIn
 
 FAKE = CriteriaExtraction(
     title="Responsable d'entrepôt", ref="ORV-1",
@@ -16,6 +16,7 @@ FAKE = CriteriaExtraction(
 
 def _actions():
     from sqlalchemy import select
+
     from backend.app.db import SessionLocal
     from backend.app.models import AuditLog
     with SessionLocal() as db:

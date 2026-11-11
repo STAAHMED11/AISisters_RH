@@ -2,8 +2,9 @@ from flask import Blueprint
 from sqlalchemy import func, select
 
 from .. import costs as C
-from ..web import db as get_session, login_required
 from ..models import UsageEvent
+from ..web import db as get_session
+from ..web import login_required
 from .jobs import get_job_or_404
 
 bp = Blueprint("costs", __name__, url_prefix="/api/costs")

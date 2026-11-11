@@ -1,7 +1,8 @@
-"""Single interface to the LLM. Swap the provider by replacing `LLM._call`.
+"""Single entry point to the LLM: every call goes through `LLM`, so a provider or model change happens here only.
 
-- `structured()` forces a tool call whose input schema is a Pydantic model => validated JSON.
-- Tiers: "smart" (Sonnet) for reasoning, "fast" (Haiku) for cheap tasks.
+- `structured()` uses native structured outputs (`messages.parse`) with a Pydantic model => validated JSON.
+- `chat()` is a plain text turn (text-mode pre-interview).
+- Tiers: "smart" (Sonnet) for judgement, "fast" (Haiku) for high-volume tasks. Models come from MODEL_SMART / MODEL_FAST.
 """
 import base64
 import logging
@@ -65,7 +66,7 @@ class LLM:
         messages = [{"role": "user", "content": self._content(user, files)}]
         # Thinking tokens count against max_tokens: keep a generous floor so JSON is never cut mid-string.
         budget = max(max_tokens, 10000 if tier == "smart" else 2500)
-        for attempt in range(2):
+        for _attempt in range(2):
             t0 = time.time()
             try:
                 # Native structured outputs (forced tool_choice is rejected by the 5.x models).
@@ -108,7 +109,7 @@ class LLM:
         except LLMError:
             raise
         except Exception as e:
-            raise LLMError(f"LLM chat a échoué: {e}")
+            raise LLMError(f"LLM chat a échoué: {e}") from e
         costs.record_llm(self.model(tier), resp.usage, usage)
         return "".join(b.text for b in resp.content if b.type == "text").strip()
 

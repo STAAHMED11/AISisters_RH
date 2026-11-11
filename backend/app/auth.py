@@ -25,7 +25,7 @@ def current_user() -> str:
     try:
         data = _ser.loads(token, max_age=MAX_AGE)
     except BadSignature:
-        raise HTTPException(401, "Session invalide")
+        raise HTTPException(401, "Session invalide") from None
     return data["name"]
 
 

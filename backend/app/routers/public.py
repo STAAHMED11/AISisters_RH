@@ -1,5 +1,5 @@
 """Candidate-facing endpoints. No account: the unguessable token is the credential."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from flask import Blueprint
 from pydantic import BaseModel
@@ -8,11 +8,17 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..config import settings
-from ..web import HTTPException, background, db as get_session, parse
 from ..interview.elevenlabs import ElevenLabsError, fetch_and_score, signed_url
-from ..interview.service import agent_turn, agent_variables, ensure_plan, score_interview
+from ..interview.service import (
+    agent_turn,
+    agent_variables,
+    ensure_plan,
+    score_interview,
+)
 from ..models import Candidate, Interview
 from ..util import aware, format_date
+from ..web import HTTPException, background, parse
+from ..web import db as get_session
 
 bp = Blueprint("public", __name__, url_prefix="/api/public/interview")
 
@@ -27,7 +33,7 @@ def _load(db: Session, token: str) -> tuple[Candidate, Interview]:
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _expired(iv: Interview) -> bool:
@@ -156,7 +162,7 @@ def voice_session(token: str):
     try:
         url = signed_url()
     except ElevenLabsError as e:
-        raise HTTPException(503, str(e))
+        raise HTTPException(503, str(e)) from e
     iv.mode = "voice"
     db.commit()
     return {"signed_url": url, "language": iv.language, "dynamic_variables": agent_variables(c, iv)}

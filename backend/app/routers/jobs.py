@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..costs import summarize
-from ..web import HTTPException, background, db as get_session, login_required, parse
 from ..llm import LLMError, llm
 from ..models import Candidate, Criterion, Job, now
-from ..screening.pipeline import process_candidate
 from ..prompts import CRITERIA_SYSTEM, CRITERIA_USER
 from ..schemas import CriteriaExtraction, CriterionEdit, CriterionIn, JobIn
+from ..screening.pipeline import process_candidate
+from ..util import aware
+from ..web import HTTPException, background, login_required, parse
+from ..web import db as get_session
 
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
@@ -36,11 +38,6 @@ def extract_criteria(description: str, job_id: int | None = None) -> CriteriaExt
     return out
 
 
-def _aware(dt):
-    from datetime import timezone
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
 def job_dict(job: Job, db: Session, with_description: bool = True) -> dict:
     counts = dict(
         db.execute(
@@ -50,7 +47,7 @@ def job_dict(job: Job, db: Session, with_description: bool = True) -> dict:
     total = sum(counts.values())
     stale = sum(
         1 for c in job.candidates
-        if c.status == "screened" and (c.screened_at is None or _aware(c.screened_at) < _aware(job.criteria_updated_at or job.created_at))
+        if c.status == "screened" and (c.screened_at is None or aware(c.screened_at) < aware(job.criteria_updated_at or job.created_at))
     )
     d = {
         "stale": stale,
@@ -174,7 +171,7 @@ def create_job(user: str):
     except LLMError as e:
         db.delete(job)
         db.commit()
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, str(e)) from e
     job.title = body.title.strip() or ex.title
     job.ref = body.ref.strip() or ex.ref
     set_criteria(db, job, ex.criteria)
@@ -229,7 +226,7 @@ def re_extract(job_id: int, user: str):
     try:
         ex = extract_criteria(job.description, job.id)
     except LLMError as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, str(e)) from e
     job.criteria.clear()  # new criteria = new ids: old evidence no longer applies, re-screen everything
     db.flush()
     set_criteria(db, job, ex.criteria)

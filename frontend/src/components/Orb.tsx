@@ -12,7 +12,7 @@ const PALETTE: Record<OrbState, [number[], number[]]> = {
 }
 const rgb = (c: number[], a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`
 
-/** Canvas orb à la ChatGPT voice: breathes at rest, swells with the mic level (listening) or the agent's voice (speaking). */
+/** Canvas orb: breathes at rest, swells with the mic level (listening) or the agent's voice (speaking). */
 export default function Orb({ state, getInput, getOutput, size = 380 }: {
   state: OrbState; getInput: () => number; getOutput: () => number; size?: number
 }) {

@@ -1,13 +1,15 @@
 from flask import Blueprint
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..comms import ai_proposal, draft_in_background, mark_sent
-from ..mailer import MailError, configured, send_email, status as mail_state
-from ..web import HTTPException, background, db as get_session, login_required, parse
+from ..config import settings
+from ..mailer import MailError, send_email
+from ..mailer import status as mail_state
 from ..models import Candidate, Decision, Message
+from ..web import HTTPException, background, login_required, parse
+from ..web import db as get_session
 from .jobs import get_job_or_404
 
 bp = Blueprint("outbox", __name__, url_prefix="/api")
@@ -124,7 +126,7 @@ def send_message(mid: int, user: str):
         try:
             mark_sent(db, m, user)
         except MailError as e:
-            raise HTTPException(502, str(e))
+            raise HTTPException(502, str(e)) from e
     return message_dict(m)
 
 
@@ -176,12 +178,8 @@ def mail_test(user: str):
     from ..emailtpl import build_html
     text = "Ceci est un e-mail de test de l'application RH du futur.\n\nSi vous le lisez, l'envoi des invitations et des réponses aux candidats fonctionne."
     try:
-        transport = send_email(body.to, "Test d'envoi · RH du futur", text, html=build_html(text, cta_label="Ouvrir l'application", cta_url=settings_public()))
+        transport = send_email(body.to, "Test d'envoi · RH du futur", text, html=build_html(text, cta_label="Ouvrir l'application", cta_url=settings.public_url))
     except MailError as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, str(e)) from e
     return {"transport": transport}
 
-
-def settings_public() -> str:
-    from ..config import settings
-    return settings.public_url

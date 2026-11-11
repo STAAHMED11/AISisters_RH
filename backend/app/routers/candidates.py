@@ -1,22 +1,28 @@
+from datetime import timedelta
+
 from flask import Blueprint, request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
-from ..web import HTTPException, background, db as get_session, login_required, parse
-from ..models import AuditLog, Candidate
-from ..costs import candidate_costs
-from ..comms import ai_proposal, draft_message, mark_sent
-from ..mailer import MailError, configured
-from ..util import aware, format_date
-from datetime import timedelta
-from ..models import now
+from ..comms import ai_proposal, mark_sent
 from ..config import settings
-from ..interview.service import create_interview, ensure_interview, ensure_invite_draft, has_plan, prepare_assets_bg, score_interview
-from ..llm import LLMError
+from ..costs import candidate_costs
+from ..interview.service import (
+    create_interview,
+    ensure_invite_draft,
+    has_plan,
+    prepare_assets_bg,
+    score_interview,
+)
+from ..mailer import MailError, configured
+from ..models import AuditLog, Candidate, now
 from ..screening.pipeline import process_candidate
 from ..screening.verify import verify_quote
+from ..util import aware, format_date
+from ..web import HTTPException, background, login_required, parse
+from ..web import db as get_session
 from .jobs import get_job_or_404
 
 bp = Blueprint("candidates", __name__, url_prefix="/api")
@@ -133,13 +139,13 @@ def send_invite(cid: int, user: str):
         try:
             last = ensure_invite_draft(db, c)
         except Exception as e:  # noqa: BLE001
-            raise HTTPException(502, f"Impossible de préparer l'e-mail : {e}")
+            raise HTTPException(502, f"Impossible de préparer l'e-mail : {e}") from e
     if last.status == "draft":
         log_event(db, user, "message_approved", "candidate", c.id, kind="invite")
         try:
             mark_sent(db, last, user)
         except MailError as e:
-            raise HTTPException(502, str(e))
+            raise HTTPException(502, str(e)) from e
     db.refresh(c)
     return interview_dict(c)
 

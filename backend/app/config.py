@@ -19,7 +19,6 @@ class Settings:
 
     elevenlabs_api_key = _env("ELEVENLABS_API_KEY")
     elevenlabs_agent_id = _env("ELEVENLABS_AGENT_ID")
-    elevenlabs_webhook_secret = _env("ELEVENLABS_WEBHOOK_SECRET")
 
     app_password = _env("APP_PASSWORD", "orvane")
     secret_key = _env("SECRET_KEY", "dev-secret-change-me")

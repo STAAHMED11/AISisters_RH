@@ -1,6 +1,5 @@
 """Pre-interview: plan, agent prompt, text chat engine, scoring + synthesis."""
 import logging
-import re
 import secrets
 import threading
 from datetime import timedelta
@@ -14,9 +13,16 @@ from ..db import SessionLocal
 from ..llm import LLMError, llm
 from ..models import Candidate, Interview, now
 from ..prompts import (
-    AGENT_END_TEXT, AGENT_PROMPT_TEMPLATE, PLAN_SYSTEM, PLAN_USER, PROMPT_VERSION, SCORE_SYSTEM, SCORE_USER,
+    AGENT_END_TEXT,
+    AGENT_PROMPT_TEMPLATE,
+    PLAN_SYSTEM,
+    PLAN_USER,
+    PROMPT_VERSION,
+    SCORE_SYSTEM,
+    SCORE_USER,
 )
 from ..schemas import InterviewPlan, Synthesis
+from ..screening.triage import KIND_WEIGHT  # same must/nice weights as the CV score
 from ..screening.verify import verify_quote
 
 log = logging.getLogger("interview")
@@ -25,7 +31,6 @@ LANG_NAMES = {"fr": "français", "en": "English"}
 MAX_TURNS = 40
 GRADE_MAX = 3.0
 CV_WEIGHT = 0.4  # global = 0.4*cv + 0.6*interview
-KIND_WEIGHT = {"must": 3.0, "nice": 1.0}
 
 
 def interview_language(c: Candidate) -> str:
@@ -235,10 +240,10 @@ def score_interview(candidate_id: int):
             if g.criterion_id not in valid:
                 continue
             gr, note = max(-1, min(3, g.grade)), g.rationale
-            if gr > 0:  # no quote, no grade
+            if gr > 0:  # no quote, no grade: unverified = "not assessed" (excluded), never "contradicted" (0)
                 ok, _ = verify_quote(g.quote, said, fuzzy=0.85)
                 if not ok:
-                    note, gr = f"[citation non vérifiée, note initiale {g.grade}] {note}", 0
+                    note, gr = f"[citation non vérifiée, note initiale {g.grade}] {note}", -1
             grades[g.criterion_id] = gr
             out_grades.append({"criterion_id": g.criterion_id, "grade": gr, "quote": g.quote if gr > 0 else "", "rationale": note})
 

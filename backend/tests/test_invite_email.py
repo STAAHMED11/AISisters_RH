@@ -54,7 +54,7 @@ def test_invitation_email_has_link_and_deadline(client, monkeypatch):
     assert msg["To"] == "karim@example.fr" and f"/i/{token}" in body            # link guaranteed in the e-mail
     assert d["expires_label"] in body and "valable jusqu" in body              # deadline guaranteed in the e-mail
     html = msg.get_body(preferencelist=("html",)).get_content()                # HTML version with a real button
-    assert msg.is_multipart() and f'href="http' in html and f"/i/{token}" in html and "Passer le pré-entretien" in html and d["expires_label"] in html
+    assert msg.is_multipart() and 'href="http' in html and f"/i/{token}" in html and "Passer le pré-entretien" in html and d["expires_label"] in html
     # sending again without extend does not email twice
     n = len(FakeSMTP.sent)
     client.post(f"/api/candidates/{cid}/invite/send", json={})
@@ -142,6 +142,7 @@ def _fresh_candidate(with_email: str = "karim@example.fr") -> int:
 
 def _stub_llm(monkeypatch, counter: dict | None = None):
     import time
+
     from backend.app.schemas import InterviewPlan, PlanQuestion
 
     def fake(tier, system, user, schema, **kw):
@@ -157,6 +158,7 @@ def _stub_llm(monkeypatch, counter: dict | None = None):
 def test_creating_the_interview_is_instant_and_safe_under_concurrent_clicks(monkeypatch):
     """Regression: 'UNIQUE constraint failed: interviews.candidate_id' when the background preparation and a click collided."""
     import threading
+
     from backend.app.interview.service import create_interview
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no AI call allowed")))  # instant = no LLM
     cid = _fresh_candidate()
@@ -177,6 +179,7 @@ def test_creating_the_interview_is_instant_and_safe_under_concurrent_clicks(monk
 
 def test_plan_and_invite_draft_are_built_only_once(monkeypatch):
     import threading
+
     from backend.app.interview.service import create_interview, prepare_assets
     from backend.app.models import Message
     calls: dict = {}
@@ -203,6 +206,7 @@ def test_plan_and_invite_draft_are_built_only_once(monkeypatch):
 
 def test_clicking_invite_while_the_pipeline_prepares_the_interview_does_not_crash(client, monkeypatch):
     import threading
+
     from backend.app.interview.service import ensure_interview
     _stub_llm(monkeypatch)
     cid = _fresh_candidate()

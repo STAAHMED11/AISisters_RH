@@ -52,7 +52,7 @@ def parse(model: type[T] | object, *, default=None) -> T:
             return model.model_validate(data)
         return TypeAdapter(model).validate_python(data)
     except ValidationError as e:
-        raise HTTPException(422, "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()))
+        raise HTTPException(422, "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())) from None
 
 
 def login_required(view):

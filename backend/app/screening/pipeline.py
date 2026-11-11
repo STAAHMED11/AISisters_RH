@@ -14,8 +14,14 @@ from ..db import SessionLocal
 from ..llm import LLMError, llm
 from ..models import Candidate, Criterion, Evaluation, now
 from ..prompts import (
-    EVAL_SYSTEM, EVAL_USER, INJECTION_SYSTEM, INJECTION_USER, PROFILE_SYSTEM, PROFILE_USER,
-    PROMPT_VERSION, TRANSCRIBE_SYSTEM,
+    EVAL_SYSTEM,
+    EVAL_USER,
+    INJECTION_SYSTEM,
+    INJECTION_USER,
+    PROFILE_SYSTEM,
+    PROFILE_USER,
+    PROMPT_VERSION,
+    TRANSCRIBE_SYSTEM,
 )
 from ..schemas import CVEvaluation, InjectionScan, Profile, Transcription
 from .triage import PREQUAL, triage
@@ -24,11 +30,15 @@ from .verify import verify_quote
 log = logging.getLogger("pipeline")
 _SEM = threading.Semaphore(4)  # at most 4 candidates in flight (API rate limits)
 
-# Cheap deterministic net on top of the LLM scan.
+# Cheap deterministic net on top of the LLM scan. Only phrases that address the screening system itself:
+# ordinary job vocabulary ("système automatisé de stockage", "AI deployment lead") must never flag a CV.
 _INJ_RE = re.compile(
-    r"(ignore[zr]?\s+(?:toutes?\s+)?(?:les\s+)?instructions|ignore\s+(?:all\s+)?previous|score\s+maximal|"
-    r"syst[èe]me\s+automatis[ée]|automated\s+(?:screening|system)|attribuez?-lui|classez?-le\s+en\s+priorit[ée]|"
-    r"as\s+an\s+ai|you\s+are\s+now)",
+    r"(ignore[zr]?\s+(?:toutes?\s+)?(?:les\s+)?(?:instructions|consignes)|ignore\s+(?:all\s+)?(?:the\s+)?previous"
+    r"|(?:score|note)\s+maximal[e]?|(?:highest|maximum|max)\s+score"
+    r"|attribuez?-lui|classez?-le\s+en\s+priorit[ée]"
+    r"|(?:à\s+l['’]attention|note|message)\s+(?:du|au|de\s+l['’]|for\s+the|to\s+the)\s*"
+    r"(?:syst[èe]me|ia\b|ai\b|automated|logiciel|algorithme|robot)"
+    r"|you\s+are\s+now\s+(?:a|an|the)\b)",
     re.I,
 )
 
@@ -157,13 +167,14 @@ def _process(db, candidate_id: int):
     )
     by_id = {e.criterion_id: e for e in ev.evaluations}
     db.execute(delete(Evaluation).where(Evaluation.candidate_id == c.id))
-    items = []
+    items, doubt = [], False
     for k in crits:
         e = by_id.get(k.id)
         verdict, quote, why, ok = (e.verdict, e.quote, e.rationale, False) if e else ("not_evidenced", "", "Non évalué.", False)
         if verdict != "not_evidenced":
             ok, _ = verify_quote(quote, c.text_anon)
             if not ok:  # no verified quote, no verdict
+                doubt = doubt or (k.kind == "must" and verdict == "not_met")
                 why = f"[citation non vérifiée, verdict initial: {verdict}] {why}"
                 verdict, quote = "not_evidenced", ""
         db.add(Evaluation(candidate_id=c.id, criterion_id=k.id, verdict=verdict, quote=quote,
@@ -171,7 +182,7 @@ def _process(db, candidate_id: int):
         items.append((k.kind, verdict))
 
     # 5. triage (pure code)
-    score, tri = triage(items, injection=c.injection_flag)
+    score, tri = triage(items, injection=c.injection_flag, doubt=doubt)
     c.cv_score, c.triage, c.prequal = score, tri, _prequal_label(tri)
     c.summary = ev.summary
     c.status = "screened"

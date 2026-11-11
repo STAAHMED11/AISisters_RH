@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..models import Candidate
-from .triage import PREQUAL, triage
+from .triage import PREQUAL, triage, unverified_fail
 
 log = logging.getLogger("retriage")
 CV_WEIGHT = 0.4  # keep in sync with interview.service (global = 0.4*cv + 0.6*interview)
@@ -20,7 +20,9 @@ def retriage_candidate(c: Candidate) -> tuple[str, str] | None:
              if e.criterion_id in kinds and kinds[e.criterion_id].source == "cv"]
     if not items:
         return None
-    score, tri = triage(items, injection=c.injection_flag)
+    doubt = any(kinds[e.criterion_id].kind == "must" and unverified_fail(e.rationale)
+                for e in c.evaluations if e.criterion_id in kinds)
+    score, tri = triage(items, injection=c.injection_flag, doubt=doubt)
     old = c.triage
     c.cv_score, c.triage, c.prequal = score, tri, PREQUAL[tri]
     if c.interview_note is not None:

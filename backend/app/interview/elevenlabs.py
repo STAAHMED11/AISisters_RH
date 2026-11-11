@@ -4,9 +4,9 @@ import time
 
 import httpx
 
+from .. import costs
 from ..config import settings
 from ..db import SessionLocal
-from .. import costs
 from ..models import Candidate
 from .service import score_interview
 
