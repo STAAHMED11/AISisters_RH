@@ -30,15 +30,23 @@ from .verify import verify_quote
 log = logging.getLogger("pipeline")
 _SEM = threading.Semaphore(4)  # at most 4 candidates in flight (API rate limits)
 
-# Cheap deterministic net on top of the LLM scan. Only phrases that address the screening system itself:
-# ordinary job vocabulary ("système automatisé de stockage", "AI deployment lead") must never flag a CV.
+# Cheap deterministic net on top of the LLM scan. It only matches text that gives the screening system an ORDER
+# or is ADDRESSED to it. Achievements ("note maximale au CACES", "highest score in the audit") and ordinary job
+# vocabulary ("système automatisé de stockage", "AI deployment lead") must never flag a CV on their own.
+_TARGET = (r"(?:syst[èe]me\s+(?:automatis[ée]e?|de\s+(?:tri|recrutement|s[ée]lection))|\bia\b|\bai\b|intelligence\s+artificielle"
+           r"|automated\s+(?:screening|system|recruit\w*)|screening\s+(?:system|tool|bot)|\bats\b|\bllm\b|algorithme|robot)")
 _INJ_RE = re.compile(
-    r"(ignore[zr]?\s+(?:toutes?\s+)?(?:les\s+)?(?:instructions|consignes)|ignore\s+(?:all\s+)?(?:the\s+)?previous"
-    r"|(?:score|note)\s+maximal[e]?|(?:highest|maximum|max)\s+score"
-    r"|attribuez?-lui|classez?-le\s+en\s+priorit[ée]"
-    r"|(?:à\s+l['’]attention|note|message)\s+(?:du|au|de\s+l['’]|for\s+the|to\s+the)\s*"
-    r"(?:syst[èe]me|ia\b|ai\b|automated|logiciel|algorithme|robot)"
-    r"|you\s+are\s+now\s+(?:a|an|the)\b)",
+    r"(ignore[zr]?\s+(?:toutes?\s+)?(?:les\s+)?(?:instructions|consignes)"
+    r"|(?:ignore|disregard|forget)\s+(?:all\s+)?(?:the\s+|your\s+|any\s+)?(?:previous|prior|above)\s+(?:instructions|prompts?|rules)"
+    r"|(?:attribue[zr]?|donne[zr]?|accorde[zr]?)-lui|classe[zr]?-le\s+en\s+(?:priorit[ée]|t[êe]te)"
+    r"|(?:give|assign|award)\s+(?:him|her|them|this\s+(?:candidate|cv|resume)|the\s+candidate)\b"
+    r"|rank\s+(?:him|her|them|this\s+(?:candidate|cv|resume))\s+(?:first|highest|top)"
+    r"|(?:à\s+l['’]attention\s+(?:du|de\s+l['’]|des)|(?:note|message|instructions?)\s+(?:au|à\s+l['’]|pour\s+(?:le|l['’])|to\s+the|for\s+the))\s*"
+    + _TARGET +
+    r"|you\s+are\s+now\s+(?:a|an|the)\b"
+    r"|system\s+(?:override|prompt)|(?:disregard|ignore|ignore[zr])\s+(?:the\s+|les\s+)?(?:job\s+)?(?:criteria|crit[èe]res)"
+    r"|(?:output|return|set)\s+(?:the\s+)?(?:verdict|score|rating)\b"
+    r"|(?:this|the)\s+candidate\s+is\s+(?:a\s+)?(?:perfect|ideal)|ce\s+candidat\s+(?:correspond\s+parfaitement|est\s+(?:le\s+)?(?:candidat\s+)?id[ée]al))",
     re.I,
 )
 
@@ -67,10 +75,11 @@ def _scan_injection(visible: str, hidden: list[str], usage: dict | None = None) 
             evidence += _verified(visible + "\n" + hid, scan.evidence)
     except LLMError as e:
         log.warning("injection scan failed: %s", e)
-    # hidden text is the clearest evidence: show the whole passage first
-    if hid.strip() and (flagged or len(hid.strip()) > 40):
-        flagged = True
-        evidence = [hid.strip()[:400]]
+    # Hidden text is ALWAYS kept away from the evaluator (see cv/parse.py), but on its own it is not an attack
+    # (design tools, white keywords, layout artefacts). It raises the flag only when it carries an instruction,
+    # i.e. when the regex or the LLM scan found one. Then the whole hidden passage is shown first, as evidence.
+    if flagged and hid.strip():
+        evidence = [hid.strip()[:400], *evidence]
     return flagged, list(dict.fromkeys(evidence))[:5]
 
 

@@ -73,11 +73,14 @@ def _parse_pdf(data: bytes) -> Parsed:
     visible_pages, hidden = [], []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         for page in pdf.pages[:8]:
+            # Backgrounds that make white text readable: dark filled rectangles, and images (Canva-style CVs put
+            # a picture or a coloured band behind white text). White text on top of either is visible.
             rects = [r for r in page.rects if r.get("fill") and _is_dark_fill(r.get("non_stroking_color"))]
+            backgrounds = rects + list(page.images)
 
             def on_dark(ch) -> bool:
                 cx, cy = (ch["x0"] + ch["x1"]) / 2, (ch["top"] + ch["bottom"]) / 2
-                return any(r["x0"] <= cx <= r["x1"] and r["top"] <= cy <= r["bottom"] for r in rects)
+                return any(b["x0"] <= cx <= b["x1"] and b["top"] <= cy <= b["bottom"] for b in backgrounds)
 
             def is_hidden(ch) -> bool:
                 if ch.get("size", 10) <= TINY_PT:
