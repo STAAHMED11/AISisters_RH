@@ -1,5 +1,7 @@
+'use client'
 import type { ReactNode } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { api } from '../api'
 import { Avatar } from './ui'
 
@@ -23,34 +25,43 @@ const Mark = () => (
   </svg>
 )
 
+/** Same rule as an "active" nav link: exact match with `end`, otherwise the path or one of its sub-paths. */
+function useActive(to: string, end?: boolean) {
+  const path = usePathname()
+  return end ? path === to : path === to || path.startsWith(to + '/')
+}
+
 function Item({ to, icon, children, end }: { to: string; icon: ReactNode; children: ReactNode; end?: boolean }) {
+  const isActive = useActive(to, end)
   return (
-    <NavLink to={to} end={end}
-      className={({ isActive }) => `group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${isActive ? 'bg-white/10 font-semibold text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>
-      {({ isActive }) => (<>
-        {isActive && <span className="absolute -left-3 top-1.5 h-6 w-1 rounded-r bg-mark" />}
-        {icon}{children}
-      </>)}
-    </NavLink>
+    <Link href={to} aria-current={isActive ? 'page' : undefined}
+      className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${isActive ? 'bg-white/10 font-semibold text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>
+      {isActive && <span className="absolute -left-3 top-1.5 h-6 w-1 rounded-r bg-mark" />}
+      {icon}{children}
+    </Link>
   )
 }
 
-export default function Layout({ user }: { user: string }) {
-  const nav = useNavigate()
-  const loc = useLocation()
-  const job = loc.pathname.match(/^\/(?:jobs|costs)\/(\d+)/)?.[1]
-  const logout = async () => { await api('/logout', { method: 'POST' }); nav(0) }
+function TopLink({ to, children }: { to: string; children: ReactNode }) {
+  const isActive = useActive(to)
+  return <Link href={to} className={`rounded-md px-2.5 py-1 ${isActive ? 'bg-white/15' : 'text-white/70'}`}>{children}</Link>
+}
+
+export default function Layout({ user, children }: { user: string; children: ReactNode }) {
+  const pathname = usePathname()
+  const job = pathname.match(/^\/(?:jobs|costs)\/(\d+)/)?.[1]
+  // Full reload: the auth gate in the (recruiter) layout re-checks the session and shows the login screen.
+  const logout = async () => { await api('/logout', { method: 'POST' }); window.location.assign('/jobs') }
 
   return (
     <div className="min-h-screen lg:pl-60">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-[#08293a] px-3 py-5 lg:flex">
-        <Link to="/jobs" className="mb-7 flex items-center gap-3 px-2 text-white">
+        <Link href="/jobs" className="mb-7 flex items-center gap-3 px-2 text-white">
           <Mark />
           <span className="leading-none"><span className="font-display block text-2xl font-semibold tracking-wide">Orvane</span><span className="text-xs text-white/60">Recrutement</span></span>
         </Link>
         <nav className="space-y-1">
           <Item to="/jobs" end icon={ICON.jobs}>Offres</Item>
-          <Item to="/costs" end icon={ICON.cost}>Coûts</Item>
         </nav>
         {job && (
           <div className="mt-6">
@@ -71,15 +82,14 @@ export default function Layout({ user }: { user: string }) {
       </aside>
 
       <header className="sticky top-0 z-20 flex items-center gap-4 bg-[#08293a] px-4 py-3 text-white lg:hidden">
-        <Link to="/jobs" className="flex items-center gap-2"><Mark /><span className="font-display text-xl font-semibold">Orvane</span></Link>
+        <Link href="/jobs" className="flex items-center gap-2"><Mark /><span className="font-display text-xl font-semibold">Orvane</span></Link>
         <nav className="ml-2 flex gap-1 text-sm">
-          <NavLink to="/jobs" className={({ isActive }) => `rounded-md px-2.5 py-1 ${isActive ? 'bg-white/15' : 'text-white/70'}`}>Offres</NavLink>
-          <NavLink to="/costs" className={({ isActive }) => `rounded-md px-2.5 py-1 ${isActive ? 'bg-white/15' : 'text-white/70'}`}>Coûts</NavLink>
+          <TopLink to="/jobs">Offres</TopLink>
         </nav>
         <button onClick={logout} className="ml-auto text-xs text-white/70">Quitter</button>
       </header>
 
-      <main className="mx-auto max-w-[1180px] px-5 py-7 sm:px-8 lg:px-10 lg:py-9"><Outlet /></main>
+      <main className="mx-auto max-w-[1180px] px-5 py-7 sm:px-8 lg:px-10 lg:py-9">{children}</main>
     </div>
   )
 }

@@ -1,36 +1,18 @@
-from fastapi import APIRouter, Depends
+from flask import Blueprint
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 from .. import costs as C
-from ..auth import current_user
-from ..db import get_db
-from ..models import Candidate, Job, UsageEvent
+from ..web import db as get_session, login_required
+from ..models import UsageEvent
 from .jobs import get_job_or_404
 
-router = APIRouter(prefix="/api/costs", tags=["costs"])
+bp = Blueprint("costs", __name__, url_prefix="/api/costs")
 
 
-@router.get("")
-def overview(db: Session = Depends(get_db), user: str = Depends(current_user)):
-    jobs = db.scalars(select(Job).order_by(Job.id.desc())).all()
-    rows = []
-    for j in jobs:
-        s = C.summarize(db, j.id)
-        rows.append({"id": j.id, "title": j.title, "ref": j.ref, "candidates": len(j.candidates), **s})
-    everything = C.summarize(db)
-    listed = sum(r["cost"]["total"] for r in rows)
-    return {
-        "total": everything["cost"]["total"], "calls": everything["calls"], "group_labels": C.GROUP_LABELS,
-        "per_cv": everything["per_cv"], "per_interview": everything["per_interview"],
-        "cv_analyzed": everything["cv_analyzed"], "interviews": everything["interviews"],
-        "cost": everything["cost"], "deleted_or_unassigned": round(max(0.0, everything["cost"]["total"] - listed), 6),
-        "jobs": rows,
-    }
-
-
-@router.get("/jobs/{job_id}")
-def job_detail(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/jobs/<int:job_id>")
+@login_required
+def job_detail(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     s = C.summarize(db, job.id)
     purposes = db.execute(

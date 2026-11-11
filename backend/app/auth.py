@@ -1,12 +1,13 @@
 import hmac
 
-from fastapi import APIRouter, Cookie, HTTPException, Response
+from flask import Blueprint, jsonify, request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel
 
 from .config import settings
+from .web import HTTPException, parse
 
-router = APIRouter(prefix="/api", tags=["auth"])
+bp = Blueprint("auth", __name__, url_prefix="/api")
 _ser = URLSafeTimedSerializer(settings.secret_key, salt="recruiter")
 COOKIE = "orvane_session"
 MAX_AGE = 60 * 60 * 24 * 7
@@ -17,34 +18,38 @@ class LoginIn(BaseModel):
     name: str = "Recruteur"
 
 
-def current_user(orvane_session: str | None = Cookie(default=None)) -> str:
-    if not orvane_session:
+def current_user() -> str:
+    token = request.cookies.get(COOKIE)
+    if not token:
         raise HTTPException(401, "Non connecté")
     try:
-        data = _ser.loads(orvane_session, max_age=MAX_AGE)
+        data = _ser.loads(token, max_age=MAX_AGE)
     except BadSignature:
         raise HTTPException(401, "Session invalide")
     return data["name"]
 
 
-@router.post("/login")
-def login(body: LoginIn, response: Response):
+@bp.post("/login")
+def login():
+    body = parse(LoginIn)
     if not hmac.compare_digest(body.password.encode(), settings.app_password.encode()):
         raise HTTPException(401, "Mot de passe incorrect")
     name = (body.name or "Recruteur").strip()[:60] or "Recruteur"
-    response.set_cookie(
-        COOKIE, _ser.dumps({"name": name}), max_age=MAX_AGE, httponly=True, samesite="lax",
+    resp = jsonify({"name": name})
+    resp.set_cookie(
+        COOKIE, _ser.dumps({"name": name}), max_age=MAX_AGE, httponly=True, samesite="Lax",
         secure=settings.public_url.startswith("https://"),
     )
-    return {"name": name}
+    return resp
 
 
-@router.post("/logout")
-def logout(response: Response):
-    response.delete_cookie(COOKIE)
-    return {"ok": True}
+@bp.post("/logout")
+def logout():
+    resp = jsonify({"ok": True})
+    resp.delete_cookie(COOKIE)
+    return resp
 
 
-@router.get("/me")
-def me(orvane_session: str | None = Cookie(default=None)):
-    return {"name": current_user(orvane_session)}
+@bp.get("/me")
+def me():
+    return {"name": current_user()}

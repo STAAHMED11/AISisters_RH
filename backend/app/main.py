@@ -1,18 +1,14 @@
+"""Flask application factory. The API lives under /api; the UI is the Next.js app (frontend/), which proxies /api here."""
 import logging
-from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi import Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException as WerkzeugHTTPException
 
 from . import auth
 from .config import settings
-from .db import get_db, init_db
-from .models import AuditLog
+from .db import init_db
 from .routers import candidates, costs, jobs, outbox, public
+from .web import HTTPException, close_db, run_background
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 try:  # persistent log file next to the database: easy to read when something goes wrong
@@ -24,57 +20,56 @@ except Exception:  # noqa: BLE001
     pass
 log = logging.getLogger("app")
 
-@asynccontextmanager
-async def lifespan(_):
+
+def _startup():
     init_db()
     try:  # thresholds may have changed since the candidates were screened (no LLM call involved)
         from .db import SessionLocal
         from .screening.retriage import retriage_all
-        with SessionLocal() as db:
-            retriage_all(db)
+        with SessionLocal() as s:
+            retriage_all(s)
     except Exception:  # noqa: BLE001
         log.exception("retriage at startup failed")
-    yield
 
 
-app = FastAPI(title="RH du futur — Groupe Orvane", lifespan=lifespan)
+def create_app(testing: bool = False) -> Flask:
+    app = Flask(__name__)
+    app.config.update(TESTING=testing, BACKGROUND_SYNC=testing, MAX_CONTENT_LENGTH=60 * 1024 * 1024, JSON_SORT_KEYS=False)
+    app.json.sort_keys = False
+    app.json.ensure_ascii = False
+
+    for bp in (auth.bp, jobs.bp, candidates.bp, public.bp, outbox.bp, costs.bp):
+        app.register_blueprint(bp)
+
+    # Teardown functions run in reverse order: background tasks are queued once the view has committed.
+    app.teardown_request(run_background)
+    app.teardown_appcontext(close_db)
+
+    @app.errorhandler(HTTPException)
+    def _api_error(e: HTTPException):
+        return jsonify({"detail": e.detail}), e.status_code
+
+    @app.errorhandler(WerkzeugHTTPException)
+    def _http_error(e: WerkzeugHTTPException):
+        return jsonify({"detail": e.description}), e.code
+
+    @app.errorhandler(Exception)
+    def _unhandled(e: Exception):
+        log.exception("Unhandled error on %s %s", request.method, request.path)
+        return jsonify({"detail": f"Erreur serveur ({type(e).__name__}): {str(e)[:200]}"}), 500
+
+    @app.get("/api/health")
+    def health():
+        from .screening.triage import MAYBE_AT, YES_AT
+        return {
+            "thresholds": {"yes": YES_AT, "maybe": MAYBE_AT},
+            "ok": True,
+            "anthropic": bool(settings.anthropic_api_key),
+            "elevenlabs": bool(settings.elevenlabs_api_key and settings.elevenlabs_agent_id),
+        }
+
+    _startup()
+    return app
 
 
-@app.exception_handler(Exception)
-async def unhandled(request: Request, exc: Exception):
-    log.exception("Unhandled error on %s %s", request.method, request.url.path)
-    return JSONResponse({"detail": f"Erreur serveur ({type(exc).__name__}): {str(exc)[:200]}"}, status_code=500)
-
-
-app.include_router(auth.router)
-app.include_router(jobs.router)
-app.include_router(candidates.router)
-app.include_router(public.router)
-app.include_router(outbox.router)
-app.include_router(costs.router)
-
-
-@app.get("/api/health")
-def health():
-    from .screening.triage import MAYBE_AT, YES_AT
-    return {
-        "thresholds": {"yes": YES_AT, "maybe": MAYBE_AT},
-        "ok": True,
-        "anthropic": bool(settings.anthropic_api_key),
-        "elevenlabs": bool(settings.elevenlabs_api_key and settings.elevenlabs_agent_id),
-    }
-
-
-# --- static frontend (built by Vite) with SPA fallback ---
-dist = settings.frontend_dist
-if dist.exists():
-    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
-
-    @app.get("/{path:path}")
-    def spa(path: str):
-        if path.startswith("api/"):
-            raise HTTPException(404)
-        f = dist / path
-        if path and f.is_file():
-            return FileResponse(f)
-        return FileResponse(dist / "index.html")
+app = create_app()  # gunicorn "backend.app.main:app"

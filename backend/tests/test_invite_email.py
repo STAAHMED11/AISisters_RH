@@ -45,7 +45,7 @@ def test_invitation_email_has_link_and_deadline(client, monkeypatch):
     monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
     FakeSMTP.sent.clear()
     cid, token = _candidate()
-    d = client.post(f"/api/candidates/{cid}/invite/send", json={}).json()
+    d = client.post(f"/api/candidates/{cid}/invite/send", json={}).get_json()
     assert d["invite"]["state"] == "sent" and d["invite"]["transport"] == "smtp" and d["invite"]["to"] == "karim@example.fr"
     msg = FakeSMTP.sent[-1]
     body = msg.get_body(preferencelist=("plain",)).get_content()   # plain-text part (always sent as fallback)
@@ -66,7 +66,7 @@ def test_mock_when_smtp_not_configured(client, monkeypatch):
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: Draft(subject="S", body="B"))
     monkeypatch.setattr(settings, "smtp_host", "")
     cid, _ = _candidate()
-    d = client.post(f"/api/candidates/{cid}/invite/send", json={}).json()
+    d = client.post(f"/api/candidates/{cid}/invite/send", json={}).get_json()
     assert d["invite"]["transport"] == "mock" and d["invite"]["smtp"] is False
 
 
@@ -75,25 +75,24 @@ def test_candidate_without_email_cannot_be_sent(client, monkeypatch):
     cid, _ = _candidate()
     db = SessionLocal(); c = db.get(Candidate, cid); c.profile = {"name": "X"}; db.commit(); db.close()
     r = client.post(f"/api/candidates/{cid}/invite/send", json={})
-    assert r.status_code == 502 and "e-mail" in r.json()["detail"]
+    assert r.status_code == 502 and "e-mail" in r.get_json()["detail"]
 
 
 def test_expired_link_is_refused_but_finished_interviews_stay_readable(client):
-    from fastapi.testclient import TestClient
     from backend.app.main import app
     cid, token = _candidate(expires_in_days=-1)                       # deadline passed yesterday
-    with TestClient(app) as anon:                                      # candidate: no session cookie
-        info = anon.get(f"/api/public/interview/{token}").json()
+    with app.test_client() as anon:                                      # candidate: no session cookie
+        info = anon.get(f"/api/public/interview/{token}").get_json()
         assert info["expired"] is True
         assert anon.post(f"/api/public/interview/{token}/consent", json={"language": "fr", "mode": "text"}).status_code == 410
         assert anon.post(f"/api/public/interview/{token}/start").status_code in (400, 410)
     cid2, token2 = _candidate(expires_in_days=3)
-    with TestClient(app) as anon:
-        assert anon.get(f"/api/public/interview/{token2}").json()["expired"] is False
+    with app.test_client() as anon:
+        assert anon.get(f"/api/public/interview/{token2}").get_json()["expired"] is False
         assert anon.post(f"/api/public/interview/{token2}/consent", json={"language": "fr", "mode": "text"}).status_code == 200
     cid3, token3 = _candidate(expires_in_days=-1, status="scored")      # already done: not "expired"
-    with TestClient(app) as anon:
-        assert anon.get(f"/api/public/interview/{token3}").json()["expired"] is False
+    with app.test_client() as anon:
+        assert anon.get(f"/api/public/interview/{token3}").get_json()["expired"] is False
 
 
 def test_mail_test_endpoint_reports_the_transport(client, monkeypatch):
@@ -101,12 +100,12 @@ def test_mail_test_endpoint_reports_the_transport(client, monkeypatch):
     monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
     FakeSMTP.sent.clear()
     r = client.post("/api/mail-test", json={"to": "recruteur@example.fr"})
-    assert r.status_code == 200 and r.json()["transport"] == "smtp"
+    assert r.status_code == 200 and r.get_json()["transport"] == "smtp"
     assert FakeSMTP.sent[-1]["To"] == "recruteur@example.fr" and FakeSMTP.sent[-1].is_multipart()
     assert client.post("/api/mail-test", json={"to": "pas-un-email"}).status_code == 502
     monkeypatch.setattr(settings, "smtp_host", "")
-    assert client.post("/api/mail-test", json={"to": "recruteur@example.fr"}).json()["transport"] == "mock"
-    st = client.get("/api/mail-status").json()
+    assert client.post("/api/mail-test", json={"to": "recruteur@example.fr"}).get_json()["transport"] == "mock"
+    st = client.get("/api/mail-status").get_json()
     assert st["smtp"] is False and "password" not in str(st).lower()
 
 
@@ -216,7 +215,7 @@ def test_clicking_invite_while_the_pipeline_prepares_the_interview_does_not_cras
     t = threading.Thread(target=pipeline); t.start()
     r = client.post(f"/api/candidates/{cid}/invite")          # the recruiter clicks at the same moment
     t.join()
-    assert r.status_code == 200 and r.json()["link"].endswith(r.json()["link"].rsplit("/", 1)[1]) and not errors
-    d = client.get(f"/api/candidates/{cid}").json()["interview"]
+    assert r.status_code == 200 and r.get_json()["link"].endswith(r.get_json()["link"].rsplit("/", 1)[1]) and not errors
+    d = client.get(f"/api/candidates/{cid}").get_json()["interview"]
     assert d["plan_ready"] is True and d["status"] == "pending"
     assert client.post(f"/api/candidates/{cid}/invite").status_code == 200   # idempotent

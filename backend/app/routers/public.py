@@ -1,20 +1,20 @@
 """Candidate-facing endpoints. No account: the unguessable token is the credential."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from flask import Blueprint
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..config import settings
-from ..db import get_db
+from ..web import HTTPException, background, db as get_session, parse
 from ..interview.elevenlabs import ElevenLabsError, fetch_and_score, signed_url
 from ..interview.service import agent_turn, agent_variables, ensure_plan, score_interview
 from ..models import Candidate, Interview
 from ..util import aware, format_date
 
-router = APIRouter(prefix="/api/public/interview", tags=["public"])
+bp = Blueprint("public", __name__, url_prefix="/api/public/interview")
 
 
 def _load(db: Session, token: str) -> tuple[Candidate, Interview]:
@@ -44,8 +44,9 @@ def _t(role: str, text: str) -> dict:
     return {"role": role, "text": text, "ts": _now().isoformat()}
 
 
-@router.get("/{token}")
-def info(token: str, db: Session = Depends(get_db)):
+@bp.get("/<token>")
+def info(token: str):
+    db = get_session()
     c, iv = _load(db, token)
     name = ((c.profile or {}).get("name") or "").split()
     return {
@@ -68,8 +69,9 @@ class ConsentIn(BaseModel):
     mode: str = "text"  # text | voice
 
 
-@router.post("/{token}/consent")
-def consent(token: str, body: ConsentIn, db: Session = Depends(get_db)):
+@bp.post("/<token>/consent")
+def consent(token: str):
+    db, body = get_session(), parse(ConsentIn)
     c, iv = _load(db, token)
     if iv.status in ("ended", "scored"):
         raise HTTPException(409, "Cet entretien est déjà terminé.")
@@ -84,8 +86,9 @@ def consent(token: str, body: ConsentIn, db: Session = Depends(get_db)):
     return {"ok": True, "mode": iv.mode, "language": iv.language}
 
 
-@router.post("/{token}/start")
-def start_text(token: str, db: Session = Depends(get_db)):
+@bp.post("/<token>/start")
+def start_text(token: str):
+    db = get_session()
     c, iv = _load(db, token)
     if not iv.consent_at:
         raise HTTPException(400, "Consentement requis.")
@@ -105,8 +108,9 @@ class MsgIn(BaseModel):
     text: str
 
 
-@router.post("/{token}/message")
-def message(token: str, body: MsgIn, bg: BackgroundTasks, db: Session = Depends(get_db)):
+@bp.post("/<token>/message")
+def message(token: str):
+    db, body = get_session(), parse(MsgIn)
     c, iv = _load(db, token)
     if iv.status in ("ended", "scored"):
         raise HTTPException(409, "Cet entretien est déjà terminé.")
@@ -123,23 +127,25 @@ def message(token: str, body: MsgIn, bg: BackgroundTasks, db: Session = Depends(
     db.commit()
     if done:
         log_event(db, "candidat", "interview_ended", "candidate", c.id, mode="text")
-        bg.add_task(score_interview, c.id)
+        background(score_interview, c.id)
     return {"reply": reply, "done": done}
 
 
-@router.post("/{token}/finish")
-def finish(token: str, bg: BackgroundTasks, db: Session = Depends(get_db)):
+@bp.post("/<token>/finish")
+def finish(token: str):
+    db = get_session()
     c, iv = _load(db, token)
     if iv.status not in ("ended", "scored"):
         iv.status = "ended"
         db.commit()
         log_event(db, "candidat", "interview_ended", "candidate", c.id, mode=iv.mode)
-        bg.add_task(score_interview, c.id)
+        background(score_interview, c.id)
     return {"ok": True}
 
 
-@router.get("/{token}/voice-session")
-def voice_session(token: str, db: Session = Depends(get_db)):
+@bp.get("/<token>/voice-session")
+def voice_session(token: str):
+    db = get_session()
     c, iv = _load(db, token)
     if not iv.consent_at:
         raise HTTPException(400, "Consentement requis.")
@@ -160,8 +166,9 @@ class VoiceEnd(BaseModel):
     conversation_id: str
 
 
-@router.post("/{token}/voice-ended")
-def voice_ended(token: str, body: VoiceEnd, bg: BackgroundTasks, db: Session = Depends(get_db)):
+@bp.post("/<token>/voice-ended")
+def voice_ended(token: str):
+    db, body = get_session(), parse(VoiceEnd)
     c, iv = _load(db, token)
     if iv.status not in ("ended", "scored"):
         iv.el_conversation_id = body.conversation_id[:100]
@@ -169,5 +176,5 @@ def voice_ended(token: str, body: VoiceEnd, bg: BackgroundTasks, db: Session = D
         iv.status = "ended"
         db.commit()
         log_event(db, "candidat", "interview_ended", "candidate", c.id, mode="voice", conversation=iv.el_conversation_id)
-        bg.add_task(fetch_and_score, c.id)
+        background(fetch_and_score, c.id)
     return {"ok": True}

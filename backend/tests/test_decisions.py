@@ -26,12 +26,12 @@ def _candidate(triage: str) -> int:
 def test_override_needs_comment_and_is_audited(client, monkeypatch):
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: Draft(subject="Sujet", body="Corps du message"))
     cid = _candidate("no")  # AI proposes: reject
-    assert client.get(f"/api/candidates/{cid}").json()["ai_proposal"] == "reject"
+    assert client.get(f"/api/candidates/{cid}").get_json()["ai_proposal"] == "reject"
     r = client.post(f"/api/candidates/{cid}/decision", json={"decision": "accept", "comment": ""})
     assert r.status_code == 400  # contradicting the AI without a comment is refused
     r = client.post(f"/api/candidates/{cid}/decision", json={"decision": "accept", "comment": "Profil atypique à voir"})
-    assert r.status_code == 200 and r.json()["override"] is True
-    d = client.get(f"/api/candidates/{cid}").json()
+    assert r.status_code == 200 and r.get_json()["override"] is True
+    d = client.get(f"/api/candidates/{cid}").get_json()
     assert d["decision"] == "accepted" and d["decisions"][-1]["override"] is True
     actions = _actions()
     assert "decision_override" in actions
@@ -41,15 +41,15 @@ def test_agreeing_with_ai_needs_no_comment_and_drafts_reply(client, monkeypatch)
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: Draft(subject="Sujet", body="Corps du message"))
     cid = _candidate("no")
     r = client.post(f"/api/candidates/{cid}/decision", json={"decision": "reject", "comment": ""})
-    assert r.status_code == 200 and r.json()["override"] is False
-    d = client.get(f"/api/candidates/{cid}").json()
+    assert r.status_code == 200 and r.get_json()["override"] is False
+    d = client.get(f"/api/candidates/{cid}").get_json()
     assert [m["kind"] for m in d["messages"]] == ["rejection"]  # reply drafted, not sent
     assert d["messages"][0]["status"] == "draft"
     job_id = d["job"]["id"]
-    out = client.get(f"/api/jobs/{job_id}/outbox").json()
+    out = client.get(f"/api/jobs/{job_id}/outbox").get_json()
     assert out["stats"]["awaiting_reply"] == 1
     client.post(f"/api/messages/{out['messages'][0]['id']}/send")
-    assert client.get(f"/api/jobs/{job_id}/outbox").json()["stats"] == {
+    assert client.get(f"/api/jobs/{job_id}/outbox").get_json()["stats"] == {
         "candidates": 1, "decided": 1, "awaiting_reply": 0, "replied": 1, "rejections_to_validate": 0}
 
 
@@ -97,10 +97,10 @@ def test_job_overview_builds_funnel_and_todo(client):
     cand(status="screening")
     db.commit(); jid = job.id; db.close()
 
-    o = client.get(f"/api/jobs/{jid}/overview").json()
+    o = client.get(f"/api/jobs/{jid}/overview").get_json()
     todo = {t["key"]: t["count"] for t in o["todo"]}
     assert todo == {"to_decide": 1, "to_review": 1, "invites_unsent": 1, "rejections": 1, "failed": 1, "busy": 1, "waiting": 1}
     assert o["funnel"]["received"] == 7 and o["funnel"]["analyzed"] == 5 and o["funnel"]["prequalified"] == 3 and o["funnel"]["interviewed"] == 1
     assert o["todo_count"] == 5   # "busy" and "waiting" are informational, not tasks
     assert [t["key"] for t in o["todo"]][0] == "to_decide"   # decisions come first
-    assert client.get("/api/jobs").json()[0]["todo_count"] >= 0
+    assert client.get("/api/jobs").get_json()[0]["todo_count"] >= 0

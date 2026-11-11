@@ -3,8 +3,8 @@
 AI proposes, recruiter decides. Every verdict is backed by a quote that code verifies. Every candidate gets a reply.
 
 ## Stack
-- Backend: Python 3.11+, FastAPI, SQLAlchemy + SQLite, Pydantic v2, Anthropic SDK (Sonnet 5.5 = `smart`, Haiku 5.5 = `fast`), pdfplumber, python-docx.
-- Frontend: React + Vite + TypeScript + Tailwind, built to static files and served by FastAPI (one deployable).
+- Backend: Python 3.11+, Flask (gunicorn), SQLAlchemy + SQLite, Pydantic v2, Anthropic SDK (Sonnet 5.5 = `smart`, Haiku 5.5 = `fast`), pdfplumber, python-docx.
+- Frontend: Next.js 16 (App Router) + React 19 + TypeScript + Tailwind; `/api` proxied to Flask; both run in one container (one deployable).
 - Voice: ElevenLabs Agents (`@elevenlabs/react`), post-call webhook + polling fallback. Text chat is the fallback and shares plan/transcript/scoring.
 - Deploy: `modal_deploy.py` (Modal, 1 container, SQLite on a Volume) and `Dockerfile` (own server).
 - Secrets: `.env` (`ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `APP_PASSWORD`, `SECRET_KEY`, `PUBLIC_URL`).

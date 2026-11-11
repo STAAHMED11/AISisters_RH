@@ -1,5 +1,6 @@
+'use client'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import Link from 'next/link'
 
 export const VERDICT: Record<string, { label: string; cls: string; dot: string }> = {
   met: { label: 'Satisfait', cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200', dot: 'bg-emerald-500' },
@@ -63,7 +64,7 @@ export function PageHeader({ title, subtitle, back, actions }: { title: ReactNod
   return (
     <header className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        {back && <Link to={back.to} className="mb-1 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"><span aria-hidden>←</span> {back.label}</Link>}
+        {back && <Link href={back.to} className="mb-1 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"><span aria-hidden>←</span> {back.label}</Link>}
         <h1 className="font-display text-[2rem] font-semibold leading-tight sm:text-4xl">{title}</h1>
         {subtitle && <p className="mt-1 max-w-2xl text-[15px] text-muted">{subtitle}</p>}
       </div>

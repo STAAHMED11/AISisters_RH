@@ -1,17 +1,16 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from flask import Blueprint
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
-from ..auth import current_user
 from ..comms import ai_proposal, draft_in_background, mark_sent
 from ..mailer import MailError, configured, send_email, status as mail_state
-from ..db import get_db
+from ..web import HTTPException, background, db as get_session, login_required, parse
 from ..models import Candidate, Decision, Message
 from .jobs import get_job_or_404
 
-router = APIRouter(prefix="/api", tags=["decisions"])
+bp = Blueprint("outbox", __name__, url_prefix="/api")
 
 
 class DecisionIn(BaseModel):
@@ -31,8 +30,10 @@ def record_decision(db: Session, c: Candidate, decision: str, comment: str, acto
     return d
 
 
-@router.post("/candidates/{cid}/decision")
-def decide(cid: int, body: DecisionIn, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/candidates/<int:cid>/decision")
+@login_required
+def decide(cid: int, user: str):
+    db, body = get_session(), parse(DecisionIn)
     c = db.get(Candidate, cid)
     if not c or c.status != "screened":
         raise HTTPException(404, "Candidat introuvable ou non analysé")
@@ -42,18 +43,20 @@ def decide(cid: int, body: DecisionIn, bg: BackgroundTasks, db: Session = Depend
     if proposed in ("accept", "reject") and body.decision != proposed and len(body.comment.strip()) < 5:
         raise HTTPException(400, "Vous allez à l'encontre de la proposition de l'IA : un commentaire est obligatoire.")
     record_decision(db, c, body.decision, body.comment, user)
-    bg.add_task(draft_in_background, c.id, "acceptance" if body.decision == "accept" else "rejection")
+    background(draft_in_background, c.id, "acceptance" if body.decision == "accept" else "rejection")
     return {"ok": True, "override": proposed in ("accept", "reject") and body.decision != proposed}
 
 
-@router.post("/jobs/{job_id}/reject-batch")
-def reject_batch(job_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/jobs/<int:job_id>/reject-batch")
+@login_required
+def reject_batch(job_id: int, user: str):
     """Validate, in one click, the rejections the AI proposed (triage = no, no decision yet). Letters still need approval."""
+    db = get_session()
     job = get_job_or_404(db, job_id)
     todo = [c for c in job.candidates if c.status == "screened" and c.triage == "no" and not c.decision]
     for c in todo:
         record_decision(db, c, "reject", "Refus validé en lot", user)
-        bg.add_task(draft_in_background, c.id, "rejection")
+        background(draft_in_background, c.id, "rejection")
     return {"count": len(todo)}
 
 
@@ -64,8 +67,10 @@ def message_dict(m: Message) -> dict:
             "sent_at": m.sent_at.isoformat() if m.sent_at else None, "created_at": m.created_at.isoformat()}
 
 
-@router.get("/jobs/{job_id}/outbox")
-def outbox(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/jobs/<int:job_id>/outbox")
+@login_required
+def outbox(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     msgs = [m for c in job.candidates for m in c.messages]
     msgs.sort(key=lambda m: m.id, reverse=True)
@@ -96,8 +101,10 @@ def _msg(db: Session, mid: int) -> Message:
     return m
 
 
-@router.put("/messages/{mid}")
-def edit_message(mid: int, body: MsgEdit, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.put("/messages/<int:mid>")
+@login_required
+def edit_message(mid: int, user: str):
+    db, body = get_session(), parse(MsgEdit)
     m = _msg(db, mid)
     if m.status == "sent":
         raise HTTPException(409, "Message déjà envoyé")
@@ -107,8 +114,10 @@ def edit_message(mid: int, body: MsgEdit, db: Session = Depends(get_db), user: s
     return message_dict(m)
 
 
-@router.post("/messages/{mid}/send")
-def send_message(mid: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/messages/<int:mid>/send")
+@login_required
+def send_message(mid: int, user: str):
+    db = get_session()
     m = _msg(db, mid)
     if m.status != "sent":
         log_event(db, user, "message_approved", "candidate", m.candidate_id, kind=m.kind)
@@ -119,8 +128,10 @@ def send_message(mid: int, db: Session = Depends(get_db), user: str = Depends(cu
     return message_dict(m)
 
 
-@router.delete("/messages/{mid}")
-def delete_message(mid: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.delete("/messages/<int:mid>")
+@login_required
+def delete_message(mid: int, user: str):
+    db = get_session()
     m = _msg(db, mid)
     if m.status == "sent":
         raise HTTPException(409, "Message déjà envoyé")
@@ -129,8 +140,10 @@ def delete_message(mid: int, db: Session = Depends(get_db), user: str = Depends(
     return {"ok": True}
 
 
-@router.post("/jobs/{job_id}/outbox/send-all")
-def send_all(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/jobs/<int:job_id>/outbox/send-all")
+@login_required
+def send_all(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     n, failed = 0, []
     for c in job.candidates:
@@ -145,8 +158,9 @@ def send_all(job_id: int, db: Session = Depends(get_db), user: str = Depends(cur
     return {"sent": n, "failed": failed}
 
 
-@router.get("/mail-status")
-def mail_status(user: str = Depends(current_user)):
+@bp.get("/mail-status")
+@login_required
+def mail_status(user: str):
     return mail_state()
 
 
@@ -154,9 +168,11 @@ class MailTest(BaseModel):
     to: str
 
 
-@router.post("/mail-test")
-def mail_test(body: MailTest, user: str = Depends(current_user)):
+@bp.post("/mail-test")
+@login_required
+def mail_test(user: str):
     """Checks the SMTP settings end to end by sending a short test message to an address you choose."""
+    body = parse(MailTest)
     from ..emailtpl import build_html
     text = "Ceci est un e-mail de test de l'application RH du futur.\n\nSi vous le lisez, l'envoi des invitations et des réponses aux candidats fonctionne."
     try:

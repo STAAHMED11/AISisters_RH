@@ -1,20 +1,19 @@
 import re
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from flask import Blueprint
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..costs import summarize
-from ..auth import current_user
-from ..db import get_db
+from ..web import HTTPException, background, db as get_session, login_required, parse
 from ..llm import LLMError, llm
 from ..models import Candidate, Criterion, Job, now
 from ..screening.pipeline import process_candidate
 from ..prompts import CRITERIA_SYSTEM, CRITERIA_USER
 from ..schemas import CriteriaExtraction, CriterionEdit, CriterionIn, JobIn
 
-router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 # Defense in depth: never keep a criterion that targets a protected characteristic.
 _BANNED = re.compile(
@@ -146,19 +145,25 @@ def job_overview(job: Job) -> dict:
     }
 
 
-@router.get("/{job_id}/overview")
-def get_overview(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/<int:job_id>/overview")
+@login_required
+def get_overview(job_id: int, user: str):
+    db = get_session()
     return job_overview(get_job_or_404(db, job_id))
 
 
-@router.get("")
-def list_jobs(db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("")
+@login_required
+def list_jobs(user: str):
+    db = get_session()
     jobs = db.scalars(select(Job).order_by(Job.id.desc())).all()
     return [{**job_dict(j, db, with_description=False), "todo_count": job_overview(j)["todo_count"]} for j in jobs]
 
 
-@router.post("")
-def create_job(body: JobIn, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("")
+@login_required
+def create_job(user: str):
+    db, body = get_session(), parse(JobIn)
     if len(body.description.strip()) < 40:
         raise HTTPException(400, "Collez la fiche de poste complète (texte trop court).")
     job = Job(title=body.title.strip() or "Nouvelle offre", ref=body.ref.strip(), description=body.description)
@@ -179,15 +184,17 @@ def create_job(body: JobIn, db: Session = Depends(get_db), user: str = Depends(c
     return job_dict(job, db)
 
 
-@router.get("/{job_id}")
-def get_job(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/<int:job_id>")
+@login_required
+def get_job(job_id: int, user: str):
+    db = get_session()
     return job_dict(get_job_or_404(db, job_id), db)
 
 
-@router.put("/{job_id}/criteria")
-def update_criteria(
-    job_id: int, items: list[CriterionEdit], db: Session = Depends(get_db), user: str = Depends(current_user)
-):
+@bp.put("/<int:job_id>/criteria")
+@login_required
+def update_criteria(job_id: int, user: str):
+    db, items = get_session(), parse(list[CriterionEdit], default=[])
     job = get_job_or_404(db, job_id)
     items = _clean(items)
     if not items:
@@ -198,8 +205,10 @@ def update_criteria(
     return job_dict(job, db)
 
 
-@router.post("/{job_id}/rescreen")
-def rescreen(job_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/<int:job_id>/rescreen")
+@login_required
+def rescreen(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     ids = [c.id for c in job.candidates if c.status in ("screened", "failed")]
     for c in job.candidates:
@@ -207,13 +216,15 @@ def rescreen(job_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), us
             c.status = "uploaded"
     db.commit()
     for cid in ids:
-        bg.add_task(process_candidate, cid)
+        background(process_candidate, cid)
     log_event(db, user, "job_rescreen", "job", job.id, candidates=len(ids))
     return {"count": len(ids)}
 
 
-@router.post("/{job_id}/re-extract")
-def re_extract(job_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/<int:job_id>/re-extract")
+@login_required
+def re_extract(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     try:
         ex = extract_criteria(job.description, job.id)
@@ -230,12 +241,14 @@ def re_extract(job_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), 
     db.commit()
     log_event(db, "IA", "criteria_extracted", "job", job.id, count=len(ex.criteria), rescreened=len(ids))
     for cid in ids:
-        bg.add_task(process_candidate, cid)
+        background(process_candidate, cid)
     return job_dict(job, db)
 
 
-@router.delete("/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.delete("/<int:job_id>")
+@login_required
+def delete_job(job_id: int, user: str):
+    db = get_session()
     job = get_job_or_404(db, job_id)
     db.delete(job)
     db.commit()

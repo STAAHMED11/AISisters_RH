@@ -45,18 +45,16 @@ def test_job_cost_aggregation_per_cv_and_per_interview(client, monkeypatch):
     rec("elevenlabs", "voice_call", model="elevenlabs-agent", job_id=jid, candidate_id=a, cost_usd=0.05, ref="conv1", meta={"duration_secs": 60})
     rec("anthropic", "draft_rejection", model="claude-haiku-5-5", job_id=jid, candidate_id=b, cost_usd=0.004)
     rec("anthropic", "criteria", model="claude-sonnet-5-5", job_id=jid, cost_usd=0.006)
-    d = client.get(f"/api/costs/jobs/{jid}").json()
+    d = client.get(f"/api/costs/jobs/{jid}").get_json()
     assert d["cost"]["cv"] == 0.06 and d["cost"]["interview"] == 0.03 and d["cost"]["voice"] == 0.05
     assert round(d["cost"]["other"], 6) == 0.01 and round(d["cost"]["total"], 6) == 0.15
     assert d["cv_analyzed"] == 2 and d["per_cv"] == 0.03          # 0.06 / 2 CV
     assert d["interviews"] == 1 and d["per_interview"] == 0.08    # (0.03 + 0.05) / 1 interview
     assert d["voice_minutes"] == 1.0
     assert d["candidates"][0]["id"] == a and d["forecast"]["yes_rate"] == 0.5 and d["forecast"]["avg_reply"] == 0.004
-    ov = client.get("/api/costs").json()
-    row = next(r for r in ov["jobs"] if r["id"] == jid)
-    assert row["cost"]["total"] == 0.15 and ov["total"] >= 0.15
-    assert client.get(f"/api/candidates/{a}").json()["cost"]["total"] == 0.11  # 0.01+0.02+0.03+0.05
-    assert client.get(f"/api/jobs/{jid}").json()["cost_total"] == 0.15
+    assert client.get("/api/costs").status_code == 404   # the all-offers cost page was removed: costs are read per offer
+    assert client.get(f"/api/candidates/{a}").get_json()["cost"]["total"] == 0.11  # 0.01+0.02+0.03+0.05
+    assert client.get(f"/api/jobs/{jid}").get_json()["cost_total"] == 0.15
 
 
 def test_voice_cost_uses_elevenlabs_cost_fiat_and_is_not_double_counted():
@@ -92,7 +90,7 @@ def test_candidate_history_replaces_the_audit_page(client):
     log_event(db, "candidat", "interview_ended", "candidate", a, mode="voice")
     log_event(db, "IA", "cv_screened", "candidate", b, triage="no", score=0.1)   # another candidate: must not leak
     db.close()
-    h = client.get(f"/api/candidates/{a}").json()["history"]
+    h = client.get(f"/api/candidates/{a}").get_json()["history"]
     assert [e["action"] for e in h] == ["interview_ended", "decision_override", "cv_screened"]   # newest first
     assert [e["actor_type"] for e in h] == ["candidate", "recruiter", "ia"]
     assert client.get("/api/audit").status_code in (404, 405)   # the standalone page and its endpoint are gone

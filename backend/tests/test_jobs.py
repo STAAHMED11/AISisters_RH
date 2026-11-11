@@ -30,15 +30,15 @@ def test_job_lifecycle(client, monkeypatch):
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: FAKE.model_copy(deep=True))
     r = client.post("/api/jobs", json={"description": "x" * 60})
     assert r.status_code == 200, r.text
-    job = r.json()
+    job = r.get_json()
     assert job["title"] == "Responsable d'entrepôt" and len(job["criteria"]) == 3
     jid = job["id"]
 
     new = [{"label": "WMS", "description": "", "kind": "must", "source": "cv"}]
     r = client.put(f"/api/jobs/{jid}/criteria", json=new)
-    assert [c["label"] for c in r.json()["criteria"]] == ["WMS"]
+    assert [c["label"] for c in r.get_json()["criteria"]] == ["WMS"]
     assert client.put(f"/api/jobs/{jid}/criteria", json=[]).status_code == 400
-    assert len(client.get("/api/jobs").json()) >= 1
+    assert len(client.get("/api/jobs").get_json()) >= 1
     assert client.post("/api/jobs", json={"description": "court"}).status_code == 400
     actions = _actions()
     assert "criteria_edited" in actions and "job_created" in actions
@@ -52,7 +52,7 @@ def test_editing_criteria_keeps_evidence_and_flags_stale(client, monkeypatch):
     from backend.app.models import Candidate, Evaluation, now
 
     monkeypatch.setattr(llm_mod.llm, "structured", lambda *a, **k: FAKE.model_copy(deep=True))
-    job = client.post("/api/jobs", json={"description": "x" * 60}).json()
+    job = client.post("/api/jobs", json={"description": "x" * 60}).get_json()
     crit = job["criteria"]
     db = SessionLocal()
     c = Candidate(job_id=job["id"], filename="a.pdf", status="screened", screened_at=now())
@@ -66,15 +66,15 @@ def test_editing_criteria_keeps_evidence_and_flags_stale(client, monkeypatch):
         db.expire_all()
         return db.query(Evaluation).filter_by(candidate_id=cid).count()
 
-    assert n_evals() == 3 and client.get(f"/api/jobs/{job['id']}").json()["stale"] == 0
+    assert n_evals() == 3 and client.get(f"/api/jobs/{job['id']}").get_json()["stale"] == 0
     # no-op save (same content, ids sent back): evidence intact, nothing stale
     r = client.put(f"/api/jobs/{job['id']}/criteria", json=crit)
-    assert n_evals() == 3 and r.json()["stale"] == 0
+    assert n_evals() == 3 and r.get_json()["stale"] == 0
     # edit one label: evidence intact but the candidate is flagged stale
     crit[0]["label"] = "Management ≥ 7 ans"
     r = client.put(f"/api/jobs/{job['id']}/criteria", json=crit)
-    assert [k["id"] for k in r.json()["criteria"]] == [k["id"] for k in job["criteria"]]
-    assert n_evals() == 3 and r.json()["stale"] == 1
+    assert [k["id"] for k in r.get_json()["criteria"]] == [k["id"] for k in job["criteria"]]
+    assert n_evals() == 3 and r.get_json()["stale"] == 1
     # remove one criterion: only its evaluation disappears
     r = client.put(f"/api/jobs/{job['id']}/criteria", json=crit[:2])
     assert n_evals() == 2

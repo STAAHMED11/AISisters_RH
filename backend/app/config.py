@@ -23,7 +23,7 @@ class Settings:
 
     app_password = _env("APP_PASSWORD", "orvane")
     secret_key = _env("SECRET_KEY", "dev-secret-change-me")
-    public_url = _env("PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    public_url = _env("PUBLIC_URL", "http://localhost:3000").rstrip("/")
 
     yes_threshold = float(_env("YES_THRESHOLD", "0.70"))     # CV score needed to pass to the pre-interview
     maybe_threshold = float(_env("MAYBE_THRESHOLD", "0.45"))  # below this: refusal proposed (recruiter validates)
@@ -38,7 +38,6 @@ class Settings:
 
     db_journal = _env("DB_JOURNAL", "WAL").upper()
     data_dir = Path(_env("DATA_DIR", str(ROOT / "data")))
-    frontend_dist = ROOT / "frontend" / "dist"
 
     @property
     def database_url(self) -> str:

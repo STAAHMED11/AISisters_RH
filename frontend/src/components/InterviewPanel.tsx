@@ -1,3 +1,4 @@
+'use client'
 import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '../api'

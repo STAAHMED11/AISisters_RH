@@ -1,11 +1,10 @@
+from flask import Blueprint, request
 from pydantic import BaseModel
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log_event
-from ..auth import current_user
-from ..db import get_db
+from ..web import HTTPException, background, db as get_session, login_required, parse
 from ..models import AuditLog, Candidate
 from ..costs import candidate_costs
 from ..comms import ai_proposal, draft_message, mark_sent
@@ -20,7 +19,7 @@ from ..screening.pipeline import process_candidate
 from ..screening.verify import verify_quote
 from .jobs import get_job_or_404
 
-router = APIRouter(prefix="/api", tags=["candidates"])
+bp = Blueprint("candidates", __name__, url_prefix="/api")
 MAX_BYTES = 10 * 1024 * 1024
 
 
@@ -90,14 +89,16 @@ def interview_dict(c: Candidate) -> dict | None:
     }
 
 
-@router.post("/candidates/{cid}/invite")
-def invite(cid: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/candidates/<int:cid>/invite")
+@login_required
+def invite(cid: int, user: str):
     """Instant: the link exists as soon as this returns. The AI question plan is prepared in the background."""
+    db = get_session()
     c = db.get(Candidate, cid)
     if not c or c.status != "screened":
         raise HTTPException(400, "Le CV doit d'abord être analysé.")
     create_interview(db, c)
-    bg.add_task(prepare_assets_bg, c.id)
+    background(prepare_assets_bg, c.id)
     log_event(db, user, "interview_invited", "candidate", c.id)
     return interview_dict(c)
 
@@ -106,14 +107,16 @@ class SendInvite(BaseModel):
     extend: bool = False
 
 
-@router.post("/candidates/{cid}/invite/send")
-def send_invite(cid: int, body: SendInvite, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/candidates/<int:cid>/invite/send")
+@login_required
+def send_invite(cid: int, user: str):
     """Recruiter-approved: e-mail the interview link (with its deadline) to the candidate. extend=True renews the deadline."""
+    db, body = get_session(), parse(SendInvite)
     c = db.get(Candidate, cid)
     if not c or c.status != "screened":
         raise HTTPException(400, "Le CV doit d'abord être analysé.")
     iv = create_interview(db, c)
-    bg.add_task(prepare_assets_bg, c.id)   # the plan is not needed to send the link: it is built meanwhile
+    background(prepare_assets_bg, c.id)   # the plan is not needed to send the link: it is built meanwhile
     if iv.status in ("ended", "scored"):
         raise HTTPException(409, "L'entretien est déjà passé.")
     last = next((m for m in reversed(c.messages) if m.kind == "invite"), None)
@@ -141,58 +144,63 @@ def send_invite(cid: int, body: SendInvite, bg: BackgroundTasks, db: Session = D
     return interview_dict(c)
 
 
-@router.post("/candidates/{cid}/rescore")
-def rescore(cid: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/candidates/<int:cid>/rescore")
+@login_required
+def rescore(cid: int, user: str):
+    db = get_session()
     c = db.get(Candidate, cid)
     if not c or not c.interview:
         raise HTTPException(404, "Pas d'entretien")
     if c.interview.mode == "voice" and c.interview.el_conversation_id:
         from ..interview.elevenlabs import fetch_and_score
-        bg.add_task(fetch_and_score, c.id, 20)
+        background(fetch_and_score, c.id, 20)
     else:
-        bg.add_task(score_interview, c.id)
+        background(score_interview, c.id)
     return {"ok": True}
 
 
-@router.post("/jobs/{job_id}/candidates")
-async def upload_cvs(
-    job_id: int,
-    bg: BackgroundTasks,
-    files: list[UploadFile] = File(...),
-    db: Session = Depends(get_db),
-    user: str = Depends(current_user),
-):
+@bp.post("/jobs/<int:job_id>/candidates")
+@login_required
+def upload_cvs(job_id: int, user: str):
+    db = get_session()
+    files = request.files.getlist("files")
+    if not files:
+        raise HTTPException(422, "files: au moins un fichier est requis")
     job = get_job_or_404(db, job_id)
     if not job.criteria:
         raise HTTPException(400, "Définissez d'abord les critères de l'offre.")
     created = []
     for f in files:
-        data = await f.read()
+        data = f.read()
         if not data:
             continue
         if len(data) > MAX_BYTES:
             raise HTTPException(413, f"{f.filename}: fichier trop volumineux (10 Mo max).")
-        c = Candidate(job_id=job.id, filename=f.filename or "cv", mime=f.content_type or "", file_bytes=data)
+        c = Candidate(job_id=job.id, filename=f.filename or "cv", mime=f.mimetype or "", file_bytes=data)
         db.add(c)
         db.flush()
         created.append(c)
     db.commit()
     for c in created:
         log_event(db, user, "cv_uploaded", "candidate", c.id, filename=c.filename)
-        bg.add_task(process_candidate, c.id)
+        background(process_candidate, c.id)
     return [{"id": c.id, "filename": c.filename} for c in created]
 
 
-@router.get("/jobs/{job_id}/candidates")
-def list_candidates(job_id: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/jobs/<int:job_id>/candidates")
+@login_required
+def list_candidates(job_id: int, user: str):
+    db = get_session()
     get_job_or_404(db, job_id)
     rows = db.scalars(select(Candidate).where(Candidate.job_id == job_id)).all()
     rows.sort(key=lambda c: (c.global_score if c.global_score is not None else (c.cv_score if c.cv_score is not None else -1)), reverse=True)
     return [candidate_row(c) for c in rows]
 
 
-@router.get("/candidates/{cid}")
-def get_candidate(cid: int, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.get("/candidates/<int:cid>")
+@login_required
+def get_candidate(cid: int, user: str):
+    db = get_session()
     c = db.get(Candidate, cid)
     if not c:
         raise HTTPException(404, "Candidat introuvable")
@@ -232,13 +240,15 @@ def get_candidate(cid: int, db: Session = Depends(get_db), user: str = Depends(c
     }
 
 
-@router.post("/candidates/{cid}/reprocess")
-def reprocess(cid: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: str = Depends(current_user)):
+@bp.post("/candidates/<int:cid>/reprocess")
+@login_required
+def reprocess(cid: int, user: str):
+    db = get_session()
     c = db.get(Candidate, cid)
     if not c:
         raise HTTPException(404, "Candidat introuvable")
     c.status, c.error = "uploaded", ""
     db.commit()
     log_event(db, user, "cv_reprocess", "candidate", c.id)
-    bg.add_task(process_candidate, c.id)
+    background(process_candidate, c.id)
     return {"ok": True}

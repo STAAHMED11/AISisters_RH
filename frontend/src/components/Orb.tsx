@@ -1,3 +1,4 @@
+'use client'
 import { useEffect, useRef } from 'react'
 
 export type OrbState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking'

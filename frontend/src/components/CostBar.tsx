@@ -1,3 +1,4 @@
+'use client'
 import { pct, usd } from '../lib/money'
 
 // Categorical slots validated with scripts/validate_palette.js (light + dark): blue, orange, aqua, yellow.

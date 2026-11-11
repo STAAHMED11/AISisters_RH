@@ -1,3 +1,4 @@
+'use client'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 type ConfirmOpts = { title: string; text?: string; confirmLabel?: string; tone?: 'primary' | 'danger' }

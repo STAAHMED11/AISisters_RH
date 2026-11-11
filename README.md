@@ -1,6 +1,6 @@
 # RH du futur — Groupe Orvane
 
-**Live app:** https://saniamedapp--orvane-rh.us-east.modal.run (Modal, always warm) · login = the `APP_PASSWORD` from your `.env`.
+**Live app:** https://sta-ahmed09--orvane-rh.us-east.modal.run (Modal, always warm) · login = the `APP_PASSWORD` from your `.env`.
 
 > Quick links: [What it is](#1-what-the-app-is) · [How it works](#3-how-it-works-end-to-end) · [Architecture](#4-architecture) · [Backend files](#6-backend-file-by-file) · [API](#7-api-reference) · [Frontend files](#8-frontend-file-by-file) · [Where do I change X?](#13-where-do-i-change-x) · [Look and feel](#9-look-and-feel-design-system) · [Deploy](#12-deployment-modal--docker) · [Known limits](#15-known-limits-honest)
 
@@ -30,7 +30,7 @@ Recruiter: Retain / Refuse (+ comment, mandatory if contradicting the AI) ─►
 | Step | Delivered |
 |---|---|
 | Conception | Read the brief, Sylvie's call notes and the 6 CVs; found the traps (hidden prompt-injection in Paul's CV, Ana's French B1 vs "français courant indispensable", Thomas's consulting profile, English CV). Chose the stack and the work split. |
-| T0 | Scaffold: FastAPI + SQLite + React, auth, audit log, LLM wrapper, Dockerfile, Modal script. |
+| T0 | Scaffold: Python API + SQLite + React, auth, audit log, LLM wrapper, Dockerfile, Modal script. |
 | T1 | Offers and criteria: paste a job post → criteria extracted (must/nice × cv/interview) and editable. |
 | T2 | CV pipeline: parse (PDF/DOCX/image), hidden-text detection, profile extraction, anonymization, injection scan, evaluation with verified quotes, triage in code, eval on the 6 CVs. |
 | T3 | Candidates table, candidate page (highlighted quotes, criteria grid). |
@@ -38,7 +38,8 @@ Recruiter: Retain / Refuse (+ comment, mandatory if contradicting the AI) ─►
 | T5 | Voice: ElevenLabs agent ("Camille"), animated orb UI, transcript fetch, voice cost. |
 | T6 | Decisions (override needs a comment), batch refusals, outbox with personalised replies. |
 | T7 | Surprise-CV stress set, Docker verified, honest limits. |
-| After | Threshold 70 %; e-mail invitations with an expiry date (SMTP-ready); cost dashboard; per-candidate history (the standalone audit page was removed as not needed; the log itself stays); native French voice; recruiter-experience redesign (to-do list, funnel, next-action column, sticky decision bar); **deployed on Modal**. |
+| Stack migration | Backend **FastAPI → Flask** (Blueprints, `@login_required`, Pydantic kept for validation, a dedicated background thread pool, gunicorn). Frontend **Vite SPA → Next.js 16 App Router** (route groups, `next/navigation`, voice loaded with `next/dynamic`, `/api` proxied to Flask). One container runs both. The 36 tests were ported and pass. Ported to match AI Sisters' stack (Flask + Next.js). |
+| After | Threshold 70 %; e-mail invitations with an expiry date (SMTP-ready); per-offer cost page (the all-offers cost page was later removed); per-candidate history (the standalone audit page was removed as not needed; the log itself stays); native French voice; recruiter-experience redesign (to-do list, funnel, next-action column, sticky decision bar); **deployed on Modal**. |
 
 **Problems found and fixed on the way** (useful for the oral Q&A):
 - The 5.x models reject a forced `tool_choice` → switched to **native structured outputs** (`messages.parse`).
@@ -71,12 +72,12 @@ Recruiter: Retain / Refuse (+ comment, mandatory if contradicting the AI) ─►
 ## 4. Architecture
 
 ```
- Browser (React SPA, served by FastAPI)
+ Browser ──► Next.js 16 (App Router, React 19, :3000) ── rewrites /api/* ──► Flask (:8000, internal)
    ├─ Recruiter app  /jobs /jobs/:id /jobs/:id/candidates /candidates/:id /jobs/:id/outbox /costs
    └─ Candidate app  /i/:token  →  /interview (voice orb | text chat)  →  /done           (no login)
             │ JSON over /api            │ WebSocket (voice, signed URL)
             ▼                           ▼
- FastAPI (Python)  ────────────────►  ElevenLabs Agents  (STT + Gemini Flash LLM + TTS "Camille")
+ Flask (Python, gunicorn) ─────────►  ElevenLabs Agents  (STT + Gemini Flash LLM + TTS "Camille")
    routers ─ services ─ pipeline          ▲ transcript + cost fetched by polling after the call
    │   │
    │   └──► Anthropic API: Sonnet 5.5 (criteria, evaluation, plan, synthesis) · Haiku 5.5 (profile, injection, chat, drafts)
@@ -115,11 +116,11 @@ Recruiter: Retain / Refuse (+ comment, mandatory if contradicting the AI) ─►
 
 ## 6. Backend file by file
 
-`backend/app/` (Python 3.11+, FastAPI). Entry point: `main.py`.
+`backend/app/` (Python 3.11+, Flask, served by gunicorn: 1 worker × 16 threads because SQLite has one writer). Entry point: `main.py` (`create_app`).
 
 | File | What it does (main functions) |
 |---|---|
-| `main.py` | Creates the app; `lifespan` creates tables and **re-applies triage rules** to existing candidates; `unhandled` turns any 500 into a readable message and logs it to `data/app.log`; `health` (also returns the thresholds); serves the built React app with SPA fallback; registers all routers. |
+| `main.py` | `create_app()`: registers the Blueprints, creates tables and **re-applies triage rules** to existing candidates at startup; error handlers return `{"detail": …}` JSON; `unhandled` turns any 500 into a readable message and logs it to `data/app.log`; `health` (also returns the thresholds); serves the built React app with SPA fallback; registers all routers. |
 | `config.py` | `Settings`: every environment variable in one place (see §11). |
 | `db.py` | SQLAlchemy engine + session (`get_db`); `init_db`; `_add_missing_columns` (tiny auto-migration with backfill); `PRAGMA journal_mode` configurable (`WAL` locally, `DELETE` on Modal's network volume). |
 | `models.py` | The tables above (`Job, Criterion, Candidate, Evaluation, Interview, Decision, Message, UsageEvent, AuditLog`). |
@@ -180,28 +181,29 @@ Recruiter routes need the login cookie; `/api/public/...` needs only the intervi
 | `GET /api/jobs/{id}/outbox` · `POST …/outbox/send-all` | e-mails + counters · approve & send all |
 | `PUT/POST/DELETE /api/messages/{id}` (`/send`) | edit · approve & send · delete a draft |
 | `GET /api/mail-status` · `POST /api/mail-test` | SMTP state (no secrets) · send a test e-mail to an address you choose |
-| `GET /api/costs` · `/api/costs/jobs/{id}` | cost dashboard data |
+| `GET /api/costs/jobs/{id}` | cost of one offer (per CV, per interview, per candidate, forecast) |
 | `GET /api/public/interview/{token}` | candidate: info, expiry |
 | `POST …/{token}/consent` · `/start` · `/message` · `/finish` | text interview |
 | `GET …/{token}/voice-session` · `POST …/voice-ended` | voice: signed URL + dynamic variables · end of call |
 
 ## 8. Frontend file by file
 
-`frontend/src/` (React + TypeScript + Tailwind, built with Vite into `frontend/dist`, served by FastAPI)
+`frontend/src/` (Next.js 16 App Router + React 19 + TypeScript + Tailwind v4). `next.config.ts` proxies `/api/*` to Flask (same origin, so the session cookie just works) and builds a `standalone` server for Docker.
 
 | File | Role |
 |---|---|
-| `main.tsx`, `App.tsx` | Bootstrap; routing; `/i/*` = candidate app (no login), everything else = recruiter app behind login; loads the thresholds from `/api/health`. |
+| `app/layout.tsx`, `app/(recruiter)/layout.tsx`, `app/i/[token]/…` | Root layout (fonts, `UIProvider`); the `(recruiter)` route group is the **auth gate** (`/api/me` → login screen or app shell, loads thresholds from `/api/health`); `/i/[token]` = candidate app (no login). Each `page.tsx` is a thin wrapper around a view in `views/`. |
+| `lib/nav.ts` | `useSetParams()`: update the query string (filters, tabs) — Next's `useSearchParams` is read-only. |
 | `api.ts` | `fetch` wrapper that surfaces the server's readable error message. |
 | `index.css` | Tailwind theme + shared classes (`btn-primary`, `card`, `badge`…); brand colours live in `@theme`. |
-| `pages/Login.tsx`, `Jobs.tsx` | Login · offers list with "N à traiter". |
-| `pages/JobDetail.tsx` | **Offer page**: drop zone, funnel, "À faire" list, collapsible criteria editor (inline, floating save bar), job post. |
-| `pages/Candidates.tsx` | Table: filter tabs with counts, **next-action column** (`nextAction()`), batch refusals. |
-| `pages/CandidateDetail.tsx` | Dossier with three tabs — *Synthèse* (AI summary, interview, decision history), *Critères et CV* (verdicts with quotes, highlighted CV), *Historique* (this candidate's timeline) — plus injection banner and sticky decision bar. |
-| `pages/Outbox.tsx` | **E-mail status card** (real SMTP or simulated, auto-send flag, *send a test e-mail*), review/edit/approve messages, delivery state, "no reply yet" counters. |
-| `pages/Costs.tsx`, `CostJob.tsx` | Cost overview and per-offer detail with the forecast calculator. |
-| `pages/candidate/Welcome.tsx` | Consent, FR/EN, voice or text, deadline, expired page. |
-| `pages/candidate/Interview.tsx`, `VoiceInterview.tsx`, `TextInterview.tsx`, `Done.tsx`, `Shell.tsx` | Interview screens: ElevenLabs session + orb + captions + mic-denied fallback; chat; thank-you; dark layout. |
+| `views/Login.tsx`, `Jobs.tsx` | Login · offers list with "N à traiter" and a **delete** button per offer (confirmation dialog; deletes its candidates, interviews and e-mails). |
+| `views/JobDetail.tsx` | **Offer page**: drop zone, funnel, "À faire" list, collapsible criteria editor (inline, floating save bar), job post. |
+| `views/Candidates.tsx` | Table: filter tabs with counts, **next-action column** (`nextAction()`), batch refusals. |
+| `views/CandidateDetail.tsx` | Dossier with three tabs — *Synthèse* (AI summary, interview, decision history), *Critères et CV* (verdicts with quotes, highlighted CV), *Historique* (this candidate's timeline) — plus injection banner and sticky decision bar. |
+| `views/Outbox.tsx` | **E-mail status card** (real SMTP or simulated, auto-send flag, *send a test e-mail*), review/edit/approve messages, delivery state, "no reply yet" counters. |
+| `views/CostJob.tsx` | Cost of one offer (*Coût de l'offre* in the side rail): total and split, cost per CV and per pre-interview, voice minutes, tokens, and the forecast calculator. |
+| `views/candidate/Welcome.tsx` | Consent, FR/EN, voice or text, deadline, expired page. |
+| `views/candidate/Interview.tsx`, `VoiceInterview.tsx`, `TextInterview.tsx`, `Done.tsx`, `Shell.tsx` | Interview screens: ElevenLabs session + orb + captions + mic-denied fallback; chat; thank-you; dark layout. |
 | `components/InterviewPanel.tsx` | Recruiter side of the interview: invitation bar (send/renew), QR + link, plan, synthesis, grades, transcript. |
 | `components/DecisionBar.tsx`, `DecisionPanel.tsx` | Sticky decision bar · decision history/changes. |
 | `components/Orb.tsx` | Canvas orb that reacts to mic/voice volume. |
@@ -254,16 +256,16 @@ Last results: **6/6** and **8/8** on the evals (run after the 70 % threshold cha
 
 ## 12. Deployment (Modal & Docker)
 
-**Currently deployed on Modal**: app `orvane-rh`, URL `https://saniamedapp--orvane-rh.us-east.modal.run`. One container, always warm (`min_containers=1`), 2 CPU / 2 GB, SQLite on the Volume `orvane-data` (committed every 5 s), secrets in the Modal secret `orvane-secrets`. HTTPS comes with Modal — required for the microphone.
+**Currently deployed on Modal**: app `orvane-rh`, URL `https://sta-ahmed09--orvane-rh.us-east.modal.run`. One container built from the `Dockerfile` (Next.js + Flask), always warm (`min_containers=1`), 2 CPU / 2 GB, SQLite on the Volume `orvane-data` (committed every 5 s), secrets in the Modal secret `orvane-secrets`. HTTPS comes with Modal — required for the microphone.
 
 ```bash
+modal profile activate sta-ahmed09            # the workspace that hosts the app (once per machine)
 # change code, then:
-(cd frontend && npm run build)            # only if the frontend changed
-modal deploy modal_deploy.py              # redeploys in seconds
+modal deploy modal_deploy.py              # builds the Dockerfile (Next.js + Flask) and redeploys
 
 # change a setting / secret (e.g. password, SMTP):
 #   edit .env, then
-modal secret create orvane-secrets --from-dotenv .env PUBLIC_URL=https://saniamedapp--orvane-rh.us-east.modal.run --force
+modal secret create orvane-secrets --from-dotenv .env PUBLIC_URL=https://sta-ahmed09--orvane-rh.us-east.modal.run --force
 modal deploy modal_deploy.py              # restarts the container with the new secret
 modal app logs orvane-rh                  # live logs
 ```
@@ -279,9 +281,16 @@ SMTP_FROM=Recrutement Orvane <you@gmail.com>
 ```
 then run the two `modal` commands above. Sending is then real: each invitation is a branded HTML e-mail (with a text fallback) containing a button to the pre-interview and its deadline. Optional: `AUTO_SEND_INVITES=1` sends the invitation automatically to pre-qualified candidates.
 
-**Docker / your own server**: `docker compose up -d --build` (data in a named volume; put it behind HTTPS, e.g. Caddy, for the microphone).
+**Docker / your own server**: `docker compose up -d --build`, then open http://localhost:3000. One image, two processes (`start.sh`): Next.js on :3000 (public) and Flask/gunicorn on :8000 (internal). Data in a named volume; put it behind HTTPS (e.g. Caddy) for the microphone.
 
-**Local development**: `cp .env.example .env`, `python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt`, `(cd frontend && npm ci && npm run build)`, `.venv/bin/python scripts/setup_agent.py`, `.venv/bin/uvicorn backend.app.main:app --port 8000`. Hot-reload UI: `cd frontend && npm run dev`.
+**Local development** (two terminals):
+```bash
+cp .env.example .env
+python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
+.venv/bin/python scripts/setup_agent.py                                   # ElevenLabs agent (once)
+.venv/bin/flask --app backend.app.main:app run --port 8000 --debug        # API
+(cd frontend && npm ci && npm run dev)                                    # UI with hot reload → http://localhost:3000
+```
 
 ## 13. Where do I change X?
 
@@ -296,10 +305,10 @@ then run the two `modal` commands above. Sending is then real: each invitation i
 | Change link validity | `INTERVIEW_VALID_DAYS`. |
 | Add/replace the mail provider | `mailer.py` (`send_email`) + `SMTP_*`. |
 | Change models | `MODEL_SMART` / `MODEL_FAST`; add their prices to `costs.PRICING`. |
-| Track a new kind of call in the cost dashboard | pass `usage={"job_id":…, "candidate_id":…, "purpose":"x"}` to `llm.structured/chat`; add `x` to `costs.PURPOSES`. |
+| Track a new kind of call in the per-offer cost page | pass `usage={"job_id":…, "candidate_id":…, "purpose":"x"}` to `llm.structured/chat`; add `x` to `costs.PURPOSES`. |
 | Change anonymization | `cv/anonymize.py`. Hidden-text rules: `cv/parse.py`. Banned criteria words: `routers/jobs._BANNED`. |
 | Add a field to criteria/candidates | `models.py` (new columns are added automatically) → `schemas.py` → the router → the page. |
-| Change the to-do list rules | `routers/jobs.job_overview`. Row "next action": `pages/Candidates.nextAction`. |
+| Change the to-do list rules | `routers/jobs.job_overview`. Row "next action": `views/Candidates.nextAction`. |
 | Reword the history events | `lib/events.tsx` (`describeEvent`). Cost colours/labels: `components/CostBar.tsx`. |
 | Edit candidate-facing text / add a language | `lib/i18n.ts` (+ `interview/service.LANG_NAMES`). |
 | Change brand colours / fonts | `frontend/src/index.css` (`@theme`, Google Fonts link in `index.html`). Orb colours: `components/Orb.tsx`. Lane colours: `components/ui.tsx` (`laneClass`). |
@@ -322,7 +331,7 @@ then run the two `modal` commands above. Sending is then real: each invitation i
 - **Evals are small and calibrated on their own data** (6 + 8 CVs; no test CV scores between 70 and 75 %, so 70 % rests on judgement and Sylvie's "I prefer a few false positives"). LLM output varies between runs; borderline cases (e.g. Thomas) flip between Maybe and No. No bias audit on real candidates.
 - **Anonymization protects the evaluation from bias, not privacy**: the raw CV still goes to the LLM vendor for profile extraction. Production needs a DPA/EU region, a retention policy and erasure/export tooling (none implemented).
 - **Single shared password**, SQLite on one container, no rate limiting on public endpoints, no automatic data deletion.
-- **Scale**: 4 CVs in parallel in-process (6–8 CVs ≈ 25–40 s). 1,500 CVs would need a queue, a cheap pre-filter and measured costs (the dashboard gives them).
+- **Scale**: 4 CVs in parallel in-process (6–8 CVs ≈ 25–40 s). 1,500 CVs would need a queue, a cheap pre-filter and measured costs (the per-offer cost page gives them).
 - **Parsing**: exotic multi-column PDFs can interleave text; scanned CVs use vision (tested on one PNG); hidden text detection covers colour/size, not off-page text.
 - **Costs**: Anthropic prices are a static table (`costs.PRICING`); ElevenLabs cost is theirs (plan credits not modelled); the forecast is only as good as its sample.
 - Interview scoring is advisory (0–3 rubric over ~10 minutes).
