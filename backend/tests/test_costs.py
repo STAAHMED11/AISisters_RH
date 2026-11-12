@@ -95,3 +95,24 @@ def test_candidate_history_replaces_the_audit_page(client):
     assert [e["action"] for e in h] == ["interview_ended", "decision_override", "cv_screened"]   # newest first
     assert [e["actor_type"] for e in h] == ["candidate", "recruiter", "ia"]
     assert client.get("/api/audit").status_code in (404, 405)   # the standalone page and its endpoint are gone
+
+
+def test_a_new_offer_starts_at_zero_even_when_sqlite_reuses_the_deleted_offer_number(client):
+    """Regression: deleting the last offer and creating another gave it the same id, and so the old costs."""
+    from backend.app import costs
+    from backend.app.db import SessionLocal
+    from backend.app.models import Job, UsageEvent
+    with SessionLocal() as s:
+        job = Job(title="Old", description="x" * 50)
+        s.add(job)
+        s.commit()
+        old_id = job.id
+    costs.record("anthropic", "evaluate", model="claude-sonnet-5-5", job_id=old_id, candidate_id=1, cost_usd=0.5)
+    assert client.get(f"/api/costs/jobs/{old_id}").get_json()["cost"]["total"] == 0.5
+    assert client.delete(f"/api/jobs/{old_id}").status_code == 200
+    with SessionLocal() as s:
+        assert s.query(UsageEvent).filter_by(job_id=old_id).count() == 0   # went with the offer
+        new = Job(id=old_id, title="New", description="y" * 50)            # the same number, reused
+        s.add(new)
+        s.commit()
+    assert client.get(f"/api/costs/jobs/{old_id}").get_json()["cost"]["total"] == 0

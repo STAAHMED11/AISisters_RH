@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..audit import log_event
 from ..costs import summarize
 from ..llm import LLMError, llm
-from ..models import Candidate, Criterion, Job, now
+from ..models import Candidate, Criterion, Job, UsageEvent, now
 from ..prompts import CRITERIA_SYSTEM, CRITERIA_USER
 from ..schemas import CriteriaExtraction, CriterionEdit, CriterionIn, JobIn
 from ..screening.pipeline import process_candidate
@@ -251,6 +251,9 @@ def delete_job(job_id: int, user: str):
     # One statement; the database cascades to criteria, candidates and everything attached to them
     # (foreign keys ON DELETE CASCADE, enforced by PRAGMA foreign_keys in db.py).
     db.execute(delete(Job).where(Job.id == job_id))
+    # The cost lines carry the offer number but no foreign key. SQLite reuses the number of a deleted offer, so
+    # leaving them would make the next offer inherit this offer's costs: an offer's costs go with it.
+    db.execute(delete(UsageEvent).where(UsageEvent.job_id == job_id))
     db.commit()
     log_event(db, user, "job_deleted", "job", job_id, title=title)
     return {"ok": True}

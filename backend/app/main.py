@@ -36,8 +36,26 @@ def _purge_unused_personal_data():
             log.info("removed the stored age from %s profile(s)", changed)
 
 
+def _purge_orphan_costs():
+    """Cost lines of offers that no longer exist (deleted before costs were removed with their offer)."""
+    from sqlalchemy import delete, select
+
+    from .db import SessionLocal
+    from .models import Job, UsageEvent
+    with SessionLocal() as s:
+        n = s.execute(delete(UsageEvent).where(UsageEvent.job_id.is_not(None),
+                                               UsageEvent.job_id.not_in(select(Job.id)))).rowcount
+        s.commit()
+        if n:
+            log.info("removed %s cost line(s) of deleted offers", n)
+
+
 def _startup():
     init_db()
+    try:
+        _purge_orphan_costs()
+    except Exception:  # noqa: BLE001
+        log.exception("orphan cost purge at startup failed")
     try:
         _purge_unused_personal_data()
     except Exception:  # noqa: BLE001
