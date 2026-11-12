@@ -4,8 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import log_event
 from ..comms import ai_proposal, draft_in_background, mark_sent
-from ..config import settings
-from ..mailer import MailError, send_email
+from ..mailer import MailError
 from ..mailer import status as mail_state
 from ..models import Candidate, Decision, Message
 from ..web import HTTPException, background, login_required, parse
@@ -164,22 +163,3 @@ def send_all(job_id: int, user: str):
 @login_required
 def mail_status(user: str):
     return mail_state()
-
-
-class MailTest(BaseModel):
-    to: str
-
-
-@bp.post("/mail-test")
-@login_required
-def mail_test(user: str):
-    """Checks the SMTP settings end to end by sending a short test message to an address you choose."""
-    body = parse(MailTest)
-    from ..emailtpl import build_html
-    text = "Ceci est un e-mail de test de l'application RH du futur.\n\nSi vous le lisez, l'envoi des invitations et des réponses aux candidats fonctionne."
-    try:
-        transport = send_email(body.to, "Test d'envoi · RH du futur", text, html=build_html(text, cta_label="Ouvrir l'application", cta_url=settings.public_url))
-    except MailError as e:
-        raise HTTPException(502, str(e)) from e
-    return {"transport": transport}
-

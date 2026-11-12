@@ -10,40 +10,12 @@ const KIND: Record<string, [string, string]> = {
   invite: ['Invitation', 'bg-indigo-50 text-brand'], acceptance: ['Rendez-vous', 'bg-emerald-50 text-emerald-800'], rejection: ['Refus', 'bg-rose-50 text-rose-800'],
 }
 
-function MailSetup() {
-  const { toast } = useUI()
-  const [st, setSt] = useState<any>(null)
-  const [to, setTo] = useState('')
-  const [busy, setBusy] = useState(false)
-  useEffect(() => { api('/mail-status').then(setSt).catch(() => {}) }, [])
-  if (!st) return null
-  const test = async () => {
-    setBusy(true)
-    try { const r = await api('/mail-test', { method: 'POST', json: { to } }); toast(r.transport === 'smtp' ? `E-mail de test envoyé à ${to}.` : "Test simulé : aucun serveur d'e-mail n'est configuré.", r.transport === 'smtp' ? 'success' : 'info') }
-    catch (e: any) { toast(e.message, 'error') } finally { setBusy(false) }
-  }
-  return (
-    <section className={`card flex flex-wrap items-center gap-x-8 gap-y-4 p-5 ${st.smtp ? '' : 'border-amber-300 bg-amber-50/50'}`}>
-      <div className="min-w-[16rem] flex-1">
-        <div className="flex items-center gap-2 font-display text-xl font-semibold">
-          <span className={`h-2.5 w-2.5 rounded-full ${st.smtp ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          {st.smtp ? `Envoi réel via ${st.host}` : 'Envoi simulé'}
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          {st.smtp
-            ? <>Expéditeur : <b>{st.from || 'non précisé'}</b>. Les invitations et les réponses partent réellement chez les candidats.</>
-            : <>Aucun serveur d'e-mail n'est configuré : rien ne part chez les candidats. Renseignez <code className="rounded bg-white px-1">SMTP_HOST</code>, <code className="rounded bg-white px-1">SMTP_USER</code> et <code className="rounded bg-white px-1">SMTP_PASSWORD</code> (voir le README).</>}
-        </p>
-        <p className="mt-1 text-sm text-slate-600">Invitations automatiques aux pré-qualifiés : <b>{st.auto_send_invites ? 'activées' : 'désactivées'}</b> <span className="text-muted">(<code>AUTO_SEND_INVITES</code>)</span></p>
-      </div>
-      <form className="flex items-end gap-2" onSubmit={e => { e.preventDefault(); test() }}>
-        <label className="flex flex-col text-sm font-medium">Tester l'envoi
-          <input className="input mt-1 w-64 font-normal" type="email" required placeholder="votre@adresse.fr" value={to} onChange={e => setTo(e.target.value)} />
-        </label>
-        <button className="btn-ghost" disabled={busy || !to}>{busy ? 'Envoi…' : 'Envoyer un test'}</button>
-      </form>
-    </section>
-  )
+/** Shown only when no mail server is configured: the recruiter must know that nothing really leaves. */
+function MailWarning() {
+  const [simulated, setSimulated] = useState(false)
+  useEffect(() => { api('/mail-status').then(st => setSimulated(!st.smtp)).catch(() => {}) }, [])
+  if (!simulated) return null
+  return <div className="card border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">Aucun serveur d'e-mail n'est configuré : les envois sont simulés, rien ne part chez les candidats.</div>
 }
 
 export default function Outbox() {
@@ -88,7 +60,7 @@ export default function Outbox() {
         subtitle="Chaque candidat reçoit une réponse personnalisée. Vous la relisez avant tout envoi."
         actions={<button className="btn-primary" disabled={!drafts.length || busy} onClick={sendAll}>Tout approuver et envoyer ({drafts.length})</button>} />
 
-      <MailSetup />
+      <MailWarning />
 
       <div className="grid gap-3 sm:grid-cols-4">
         {[['Candidats', s.candidates, ''], ['Décisions prises', s.decided, ''], ['Réponses envoyées', s.replied, 'text-emerald-700'], ['Décidés, sans réponse', s.awaiting_reply, s.awaiting_reply ? 'text-amber-700' : '']].map(([l, v, c]) => (

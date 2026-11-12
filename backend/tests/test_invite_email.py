@@ -97,18 +97,13 @@ def test_expired_link_is_refused_but_finished_interviews_stay_readable(client):
         assert anon.get(f"/api/public/interview/{token3}").get_json()["expired"] is False
 
 
-def test_mail_test_endpoint_reports_the_transport(client, monkeypatch):
+def test_mail_status_never_exposes_credentials(client, monkeypatch):
     monkeypatch.setattr(settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
-    FakeSMTP.sent.clear()
-    r = client.post("/api/mail-test", json={"to": "recruteur@example.fr"})
-    assert r.status_code == 200 and r.get_json()["transport"] == "smtp"
-    assert FakeSMTP.sent[-1]["To"] == "recruteur@example.fr" and FakeSMTP.sent[-1].is_multipart()
-    assert client.post("/api/mail-test", json={"to": "pas-un-email"}).status_code == 502
-    monkeypatch.setattr(settings, "smtp_host", "")
-    assert client.post("/api/mail-test", json={"to": "recruteur@example.fr"}).get_json()["transport"] == "mock"
+    monkeypatch.setattr(settings, "smtp_password", "secret-value")
     st = client.get("/api/mail-status").get_json()
-    assert st["smtp"] is False and "password" not in str(st).lower()
+    assert st["smtp"] is True and "secret-value" not in str(st) and "password" not in str(st).lower()
+    monkeypatch.setattr(settings, "smtp_host", "")
+    assert client.get("/api/mail-status").get_json()["smtp"] is False
 
 
 def test_auto_send_invites_sends_the_draft_to_a_prequalified_candidate(client, monkeypatch):

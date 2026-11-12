@@ -101,7 +101,7 @@ def test_journey(client, stub_llm):
     assert sent["failed"] == []
     assert _ok(client.get(f"/api/jobs/{jid}/outbox"))["stats"]["awaiting_reply"] == 0
 
-    _ok(client.get("/api/mail-status")); _ok(client.post("/api/mail-test", json={"to": "a@b.fr"}))
+    _ok(client.get("/api/mail-status"))
     _ok(client.post(f"/api/candidates/{cid}/rescore")); _ok(client.post(f"/api/candidates/{cid}/reprocess"))
     _ok(client.post(f"/api/jobs/{jid}/rescreen")); _ok(client.post(f"/api/jobs/{jid}/reject-batch"))
     costs = _ok(client.get(f"/api/costs/jobs/{jid}"))
