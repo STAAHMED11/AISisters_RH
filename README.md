@@ -107,9 +107,6 @@ This is a pilot, not a finished product. Before giving it to the six recruiters 
 - **Login.** There is one shared password. Each recruiter needs their own account (Entra ID), so we know who decided what.
 - **Volume.** SQLite and one server are fine for a pilot, not for 1,500 CVs at once. Next step: PostgreSQL and a job queue.
 - **Calibration.** The 70 % threshold is my judgement. It should be tuned on a few hundred CVs sorted by the recruiters.
-- **Voice.** Not yet tested with real accents and background noise.
-- **Anonymization.** French job titles still show gender ("Cheffe", "Adjointe").
 - **Personal data.** No retention period or deletion on request yet, and the hosting is in the US.
-- **Reminders.** A candidate who does not take the interview gets no reminder.
 - **Automatic deploy.** GitHub Actions runs the checks on every push (`.github/workflows/ci.yml`), but I still
   deploy by hand. The deploy should start by itself once the checks pass.
