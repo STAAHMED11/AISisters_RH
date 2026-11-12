@@ -93,7 +93,7 @@ pip install -r requirements-dev.txt
 scripts/check.sh
 ```
 
-This runs the linters, 57 tests and the frontend build. GitHub Actions runs the same script on every push. The tests need no API key and no internet. They cover the
+This runs the linters, 57 tests and the frontend build. The tests need no API key and no internet. They cover the
 score, the quote check, the anonymization, the cheating detection, the decisions, the e-mails and a complete
 journey from the offer to the final e-mail.
 
@@ -111,5 +111,5 @@ This is a pilot, not a finished product. Before giving it to the six recruiters 
 - **Anonymization.** French job titles still show gender ("Cheffe", "Adjointe").
 - **Personal data.** No retention period or deletion on request yet, and the hosting is in the US.
 - **Reminders.** A candidate who does not take the interview gets no reminder.
-- **Automatic deploy.** GitHub Actions runs the checks on every push (`.github/workflows/ci.yml`), but I still
-  deploy by hand. The deploy should start by itself once the checks pass.
+- **Automatic checks.** I run `scripts/check.sh` by hand before each deploy. It should run on every commit
+  (GitHub Actions), and a failed check should block the deploy.
