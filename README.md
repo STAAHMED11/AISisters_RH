@@ -2,6 +2,9 @@
 
 My answer to the "La RH du futur" test.
 
+*En bref : l'application lit les CV, les trie avec une preuve pour chaque verdict, fait passer un pré-entretien
+(voix ou écrit) et donne une synthèse au recruteur, qui prend toutes les décisions. Le reste de ce document est en anglais.*
+
 Sylvie's recruiters get about 1,500 CVs per job offer. This app reads the CVs for them, runs a first interview with
 the candidates who match, and gives the recruiter a short summary. The recruiter makes every final decision.
 
@@ -52,17 +55,29 @@ checked by the code.
 - **Voice and text.** Voice is closer to the phone call it replaces and lets us hear the candidate's English.
   Text is always available (no microphone, noisy place, personal preference).
 
-## Tech
+## Technical choices
 
-| Part | Tool |
-|---|---|
-| API | Python, Flask, SQLAlchemy, Pydantic |
-| Interface | Next.js, React, TypeScript, Tailwind |
-| Database | SQLite (one file) |
-| AI | Claude Sonnet for judging, Claude Haiku for simple tasks (cheaper) |
-| Voice interview | ElevenLabs |
-| E-mail | SMTP (Gmail) |
-| Hosting | One Docker image on Modal |
+| Part | Choice | Why |
+|---|---|---|
+| API | **Flask** | Simple and explicit: one file per area (offers, candidates, e-mails, costs). Runs behind gunicorn. |
+| Validation | **Pydantic** | The same tool checks what the browser sends and forces the AI to answer in a fixed shape. |
+| Database access | **SQLAlchemy** | The code does not depend on the database: changing it means changing one address. |
+| Database | **SQLite** | Nothing to install, everything in one file, the whole app starts with one command. The slow part is the AI calls, not the database. |
+| Background work | **Thread pool** | A CV takes 5 to 40 seconds to analyse. The page answers at once and the analysis runs after, 4 CVs at a time. |
+| Interface | **Next.js** and **React** | One layout protects every recruiter page, while candidate pages (`/i/<link>`) need no account. Next.js also forwards `/api` to Flask, so the browser talks to a single address and the login cookie just works. |
+| Types and style | **TypeScript** and **Tailwind** | The build stops on a type error. Colours are defined once. |
+| Judging | **Claude Sonnet** | Evaluating a CV, writing the interview questions and grading the interview need judgement. |
+| Simple tasks | **Claude Haiku** | Profile extraction, cheating detection, written interview, e-mails. About 20 times cheaper than Sonnet. |
+| AI answers | **Structured outputs** | The model answers in a schema, not free text, and each verdict can only be one of four values. |
+| Anonymization, quote check, score | **Plain code** | Free, same result every time, easy to test. No model involved. |
+| Voice interview | **ElevenLabs** | It handles listening, turn-taking and speech. Building that live audio chain was not the point of the project. |
+| Voice connection | **WebSocket** with a signed link | A call needs sound flowing both ways without interruption. The signed link keeps the API key on the server. |
+| Voice agent | **Gemini Flash** inside ElevenLabs | Fast replies, which matters in a call. |
+| E-mail | **SMTP** | Standard, and nothing is sent until a recruiter approves it. |
+| Packaging | **Docker**, one image | The same image runs on my machine and in production. It starts Next.js and Flask together. |
+| Hosting | **Modal** | Always on, HTTPS included (the microphone needs it), deployed with one command. |
+| Tests | **pytest** and **GitHub Actions** | The tests need no API key and no internet. A workflow is configured to run them on every push. |
+| Costs | **One line per AI call** | Each call is recorded with its cost, which gives the cost per CV and a forecast. |
 
 ```
 Browser ──► Next.js ──/api──► Flask ──► Claude, ElevenLabs, SMTP
@@ -86,19 +101,58 @@ docker compose up -d --build
 Then open http://localhost:3000. Without ElevenLabs keys the interview works in text mode. Without SMTP
 settings the e-mails are not really sent (the app says so).
 
+**Demo data.** `fixtures/` holds the job post and the 6 CVs of the test. You can upload them by hand, or create
+the offer and screen the 6 CVs in one go (real AI calls, needs the Python setup from the Tests section below):
+
+```bash
+.venv/bin/python scripts/seed_demo.py
+```
+
+**Voice interview.** Add `ELEVENLABS_API_KEY` to `.env`, then create the voice agent once. The script writes
+`ELEVENLABS_AGENT_ID` into `.env`:
+
+```bash
+.venv/bin/python scripts/setup_agent.py
+```
+
+## Deploy
+
+The online version runs on Modal, from the same Dockerfile:
+
+```bash
+pip install modal && modal setup
+modal secret create orvane-secrets --from-dotenv .env
+modal deploy modal_deploy.py      # prints the URL of the app
+```
+
+Then put that URL in `PUBLIC_URL` (it is used in the interview links), update the secret and deploy again.
+
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+(cd frontend && npm ci)
 scripts/check.sh
 ```
 
-This runs the linters, 57 tests and the frontend build. GitHub Actions runs the same script on every push. The tests need no API key and no internet. They cover the
+This runs the linters, 58 tests and the frontend build. The GitHub Actions workflow (`.github/workflows/ci.yml`)
+is configured to run the same checks on every push. The tests need no API key and no internet. They cover the
 score, the quote check, the anonymization, the cheating detection, the decisions, the e-mails and a complete
 journey from the offer to the final e-mail.
 
 `evals/` holds a second kind of test that uses the real AI: the 6 CVs of the test and 8 trap CVs I made
 (scan, hidden message, a cooking recipe, an empty file...), each with the result I expect.
+
+```bash
+.venv/bin/python -m evals.run_eval              # the 6 CVs of the test
+.venv/bin/python -m evals.run_eval --surprise   # the 8 trap CVs
+```
+
+## How I used an AI assistant
+
+I built this with Claude Code. I gave it precise instructions and checked its work with the tests. I also ran a
+critical review of the code, which found bugs that I then fixed.
 
 ## What is missing
 
@@ -107,6 +161,9 @@ This is a pilot, not a finished product. Before giving it to the six recruiters 
 - **Login.** There is one shared password. Each recruiter needs their own account (Entra ID), so we know who decided what.
 - **Volume.** SQLite and one server are fine for a pilot, not for 1,500 CVs at once. Next step: PostgreSQL and a job queue.
 - **Calibration.** The 70 % threshold is my judgement. It should be tuned on a few hundred CVs sorted by the recruiters.
+- **Voice.** Not yet tested with real accents and background noise.
+- **Anonymization.** French job titles still show gender ("Cheffe", "Adjointe").
 - **Personal data.** No retention period or deletion on request yet, and the hosting is in the US.
-- **Automatic deploy.** GitHub Actions runs the checks on every push (`.github/workflows/ci.yml`), but I still
+- **Reminders.** A candidate who does not take the interview gets no reminder.
+- **Automatic deploy.** The checks are automated (`scripts/check.sh` and the GitHub Actions workflow), but I still
   deploy by hand. The deploy should start by itself once the checks pass.
